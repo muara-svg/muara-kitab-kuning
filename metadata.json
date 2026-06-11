@@ -1,0 +1,6 @@
+{
+  "name": "MUARA",
+  "description": "Aplikasi Mobile & Web Islami terlengkap dengan Kumpulan Kitab Kuning digital, jadwal shalat presisi, dan fitur ibadah interaktif.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

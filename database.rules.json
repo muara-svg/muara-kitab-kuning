@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "broadcast_notifications": {
+      // Authenticated users are permitted to read real-time announcements
+      ".read": "auth != null",
+      // Only administrators can edit or delete administrative announcements
+      ".write": "auth != null && (auth.token.email === 'firmanhusen255@gmail.com' || auth.token.email === 'official.hcsh@gmail.com' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+      "$notificationId": {
+        // Enforce basic structure validation to prevent injection of malicious objects
+        ".validate": "newData.hasChildren(['id', 'title', 'content']) && newData.child('id').isString() && newData.child('title').isString()"
+      }
+    },
+    // Anything else is fully locked down and private
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

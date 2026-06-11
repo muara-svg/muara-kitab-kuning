@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", sans-serif;
+  --font-arabic: "Amiri", "Scheherazade New", serif;
+  --font-mono: "Fira Code", monospace;
+
+  --color-emerald-50: #eefdf4;
+  --color-emerald-100: #d1fae1;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-emerald-900: #064e3b;
+  --color-emerald-950: #022c22;
+}
+
+/* Custom animated background & styles for MUARA */
+.mosque-silhouette {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" preserveAspectRatio="none"><path d="M0,400 L0,320 Q50,320 60,280 Q70,240 100,240 Q130,240 140,280 Q150,320 200,320 L200,320 Q230,320 240,220 Q250,120 270,120 Q290,120 300,220 Q310,320 340,320 L350,320 Q380,320 390,260 Q400,200 420,100 T440,0 T460,100 T470,260 Q480,320 510,320 L550,320 Q570,320 580,250 Q590,185 600,185 Q610,185 620,250 Q630,320 650,320 L700,320 Q720,320 730,250 Q740,180 760,100 T780,0 T800,100 T810,250 Q820,320 840,320 L900,320 Q930,320 940,240 Q950,160 970,160 Q990,160 1000,240 Q1010,320 1040,320 L1100,320 Q1120,320 1130,270 Q1140,220 1165,220 Q1190,220 1200,270 L1200,400 Z" fill="white" fill-opacity="0.08"/></svg>');
+  background-position: bottom center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.2);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.4);
+}
+
+/* Islamic patterns background */
+.islamic-pattern {
+  background-color: #fafdfa;
+  background-image: radial-gradient(#10b981 0.5px, transparent 0.5px), radial-gradient(#10b981 0.5px, #fafdfa 0.5px);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  opacity: 0.25;
+}
+
+/* Mobile WebView optimizations for Capacitor Android/iOS */
+body, html {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Allow text selection in inputs and selectable content */
+input, textarea, [contenteditable="true"], .selectable-text {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+/* Butter-smooth momentum scrolling for mobile scroll views */
+.scroll-smooth-mobile {
+  -webkit-overflow-scrolling: touch;
+}
+
+

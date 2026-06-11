@@ -1,0 +1,21 @@
+{
+  "appId": "com.muara.kitabkuning",
+  "appName": "MUARA",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon_config_sample",
+      "iconColor": "#064e3b",
+      "sound": "beep.wav"
+    }
+  }
+}

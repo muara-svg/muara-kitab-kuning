@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MUARA</string>
+    <string name="title_activity_main">MUARA</string>
+    <string name="package_name">com.muara.kitabkuning</string>
+    <string name="custom_url_scheme">com.muara.kitabkuning</string>
+</resources>

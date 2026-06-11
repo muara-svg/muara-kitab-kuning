@@ -1,0 +1,171 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "Kategori Kitab Kuning di dalam aplikasi MUARA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "imageUrl", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Profil pengguna, santri, dan administrator MUARA",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "bio": { "type": "string" },
+        "avatarUrl": { "type": "string", "format": "uri" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "isPremium": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role", "isPremium", "createdAt"]
+    },
+    "Kitab": {
+      "title": "Kitab",
+      "description": "Kitab Kuning yang terindeks di sistem MUARA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "arabicTitle": { "type": "string" },
+        "category": { "type": "string" },
+        "author": { "type": "string" },
+        "description": { "type": "string" },
+        "isPremium": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "category", "author", "isPremium", "createdAt"]
+    },
+    "MembershipRequest": {
+      "title": "MembershipRequest",
+      "description": "Pendaftaran / Pengajuan Keanggotaan Premium oleh Santri",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string", "format": "email" },
+        "userPhone": { "type": "string" },
+        "packageName": { "type": "string" },
+        "packageDuration": { "type": "string" },
+        "price": { "type": "number" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "userEmail", "packageName", "status", "createdAt"]
+    },
+    "SedekahCampaign": {
+      "title": "SedekahCampaign",
+      "description": "Program penyaluran sedekah dan infaq digital",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "collectedAmount": { "type": "number" },
+        "donorCount": { "type": "number" },
+        "thumbnailUrl": { "type": "string", "format": "uri" },
+        "paymentType": { "type": "string", "enum": ["Bank Transfer", "QRIS Code"] },
+        "bankName": { "type": "string" },
+        "bankAccountNo": { "type": "string" },
+        "bankAccountHolder": { "type": "string" },
+        "qrisImageUrl": { "type": "string", "format": "uri" }
+      },
+      "required": ["id", "title", "description", "targetAmount", "collectedAmount", "donorCount", "thumbnailUrl"]
+    },
+    "BahtsulMasail": {
+      "title": "BahtsulMasail",
+      "description": "Topik / permasalahan diskusi syariah bahtsul masail untuk member premium",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string", "format": "uri" },
+        "userBio": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "referenceKitab": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "likedBy": { "type": "array" },
+        "commentsCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "title", "content", "createdAt"]
+    },
+    "MasailComment": {
+      "title": "MasailComment",
+      "description": "Komentar / tanggapan argumentatif dari asatidz / member premium pada bahtsul masail",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string", "format": "uri" },
+        "userBio": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "parentId": { "type": "string" },
+        "replyToName": { "type": "string" }
+      },
+      "required": ["userId", "userName", "text", "createdAt"]
+    },
+    "LocalAuthFallback": {
+      "title": "LocalAuthFallback",
+      "description": "Kredensial login cadangan database terenkripsi ketika registrasi Firebase Auth dinonaktifkan",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "password": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "password", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Daftar kategori kitab kuning"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Informasi profil user & admin"
+    },
+    "/kitabs/{kitabId}": {
+      "schema": "Kitab",
+      "description": "Daftar kitab kuning digital"
+    },
+    "/membership_requests/{requestId}": {
+      "schema": "MembershipRequest",
+      "description": "Data pengajuan premium santri"
+    },
+    "/sedekah_campaigns/{campaignId}": {
+      "schema": "SedekahCampaign",
+      "description": "Daftar program sedekah aktif"
+    },
+    "/bahtsul_masail/{masailId}": {
+      "schema": "BahtsulMasail",
+      "description": "Permasalahan diskusi bahtsul masail aktif"
+    },
+    "/bahtsul_masail/{masailId}/comments/{commentId}": {
+      "schema": "MasailComment",
+      "description": "Tanggapan / balasan jawaban dalam ruang bahtsul masail"
+    },
+    "/local_auth_fallbacks/{email}": {
+      "schema": "LocalAuthFallback",
+      "description": "Login cadangan database terenkripsi ketika pendaftaran klien di Firebase Auth dinonaktifkan"
+    }
+  }
+}
