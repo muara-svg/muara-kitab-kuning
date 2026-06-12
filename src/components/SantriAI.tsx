@@ -22,6 +22,22 @@ import { collection, getDocs } from 'firebase/firestore';
 import { firestore } from '../lib/firebaseConfig';
 import BahtsulMasail from './BahtsulMasail';
 
+// Helper to derive API URL for Capacitor or Web
+const getApiUrl = (path: string): string => {
+  const isCapacitor = typeof window !== 'undefined' && (
+    !!(window as any).Capacitor || 
+    window.location.protocol === 'capacitor:' || 
+    (window.location.protocol === 'http:' && window.location.hostname === 'localhost' && !window.location.port)
+  );
+  
+  if (isCapacitor) {
+    const cachedUrl = localStorage.getItem('muara_api_server_url');
+    const fallbackUrl = 'https://ais-pre-5nryvql223g2kompd5rosg-139765732384.asia-southeast1.run.app';
+    return `${cachedUrl || fallbackUrl}${path}`;
+  }
+  return path;
+};
+
 interface SantriAIProps {
   userProfile: UserProfile;
   onOpenUpgradeModal: () => void;
@@ -51,7 +67,7 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
     {
       id: 'welcome',
       sender: 'ai',
-      text: "Assalamu'alaikum wr. wb. Saya **Santri AI**, asisten digital ahli kitab kuning dari aplikasi MUARA. Silakan tanyakan hal-hal keagamaan (fiqih, tasawuf, akidah, hadis, dll), saya akan merujuk langsung dari khazanah kitab-kitab salafiyah di dalam aplikasi MUARA.",
+      text: "Assalamu'alaikum wr. wb. Saya **Santri AI**, asisten digital ahli kitab kuning dari aplikasi MUARA. Silakan tanyakan hal-hal keagamaan (fiqih, tasawuf, akidah, hadis, dll), saya akan merujuk langsung dari khazanah kitab-kitab salafiyah di dalam aplikasi MUARA saja.",
       timestamp: new Date()
     }
   ]);
@@ -438,21 +454,46 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
           parts: [{ text: m.text }]
         }));
 
-      // 4. Request our full-stack Express API securely with dynamically updated context
-      let response;
-      try {
-        response = await fetch('/api/gemini/santri-ai', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            prompt: combinedPrompt,
-            history: messageHistory,
-            latestKitabTitles: latestKitabTitles
-          })
-        });
-      } catch (fetchErr: any) {
+      // 4. Request our full-stack Express API securely with dynamically updated context and retries
+      let response: Response | null = null;
+      let lastError: any = null;
+      const targetUrl = getApiUrl('/api/gemini/santri-ai');
+      
+      const MAX_RETRIES = 3;
+      const RETRY_DELAY_MS = 1500;
+      
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          console.log(`[Santri AI Fetch] Menghubungi ${targetUrl} (Percobaan ${attempt}/${MAX_RETRIES})...`);
+          response = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              prompt: combinedPrompt,
+              history: messageHistory,
+              latestKitabTitles: latestKitabTitles
+            })
+          });
+          
+          if (response.status === 503 && attempt < MAX_RETRIES) {
+            console.warn(`[Santri AI Fetch] Mendapatkan status 503, mengulang dalam ${RETRY_DELAY_MS}ms...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+            continue;
+          }
+          
+          break;
+        } catch (fetchErr: any) {
+          lastError = fetchErr;
+          console.warn(`[Santri AI Fetch] Kendala koneksi pada percobaan ${attempt}/${MAX_RETRIES}:`, fetchErr);
+          if (attempt < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+          }
+        }
+      }
+      
+      if (!response) {
         throw new Error("Koneksi ditolak. Server backend sedang offline atau belum di-restart.");
       }
 
@@ -464,6 +505,10 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       }
 
       if (!response.ok) {
+        const errorMsg = resData.error || "";
+        if (response.status === 503 || errorMsg.includes("UNAVAILABLE") || errorMsg.includes("503") || errorMsg.includes("high demand") || errorMsg.includes("temporary")) {
+          throw new Error("maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti");
+        }
         throw new Error(resData.error || "Gagal menghubungi server Santri AI.");
       }
 
@@ -479,14 +524,16 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       const isJsonError = err.message.includes('JSON') || err.message.includes('JSON input');
       let explanation = err.message;
 
-      if (isJsonError) {
+      if (err.message.includes("maaf saat ini tidak bisa mengajukan pertanyaan") || err.message.includes("high demand") || err.message.includes("UNAVAILABLE") || err.message.includes("503") || err.message.includes("temporary")) {
+         explanation = "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti";
+      } else if (isJsonError) {
         explanation = `**Gangguan Respon Server (Unexpected end of JSON input)**\n\nHal ini biasanya disebabkan oleh:\n1. **Kunci GEMINI_API_KEY belum dipasang**. Anda perlu menambahkannya di panel **Settings** AI Studio agar API Google Gemini dapat dipanggil di server backend.\n2. **Server belum aktif sepenuhnya**. Silakan beritahu asisten untuk me-restart server pembangunan agar rute Express terbaru aktif.`;
       }
 
       setMessages(prev => [...prev, {
         id: 'err-' + Date.now(),
         sender: 'ai',
-        text: `Error: ${explanation}`,
+        text: explanation,
         timestamp: new Date()
       }]);
     } finally {

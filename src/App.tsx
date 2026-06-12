@@ -55,6 +55,48 @@ export default function App() {
     }
   }, []);
 
+  // Automated high precision Web-origin sync & Capacitor backend URL routing (Zero Setup Paradigm)
+  useEffect(() => {
+    // 1. If we are running in a standard Web Webview/Browser (NOT Capacitor, NOT localhost)
+    // we automatically propagate our parent origin to Firestore under app_configs/api_server.
+    const isLocalhost = typeof window !== 'undefined' && (
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1'
+    );
+    const isWebMode = typeof window !== 'undefined' && 
+      ! (window as any).Capacitor && 
+      window.location.protocol.startsWith('http') && 
+      !isLocalhost;
+
+    if (isWebMode) {
+      const origin = window.location.origin;
+      const apiServerRef = doc(firestore, 'app_configs', 'api_server');
+      setDoc(apiServerRef, { apiUrl: origin }, { merge: true })
+        .then(() => {
+          console.log('[MUARA Auto Sync] Origin server tersinkron ke Firestore:', origin);
+        })
+        .catch((err) => {
+          console.warn('[MUARA Auto Sync] Terlewat menyinkronkan server apiUrl ke Firestore (No Write Perms/Guest):', err.message);
+        });
+    }
+
+    // 2. Start realtime subscription of api_server to obtain active Server URL for Capacitor Client
+    const apiServerRef = doc(firestore, 'app_configs', 'api_server');
+    const unsubscribeApiServer = onSnapshot(apiServerRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && data.apiUrl) {
+          localStorage.setItem('muara_api_server_url', data.apiUrl);
+          console.log('[MUARA Config Loader] Menemukan API URL online:', data.apiUrl);
+        }
+      }
+    }, (error) => {
+      console.warn('[MUARA Config Loader Warning] Tidak dapat mengambil API server dari Firestore:', error.message);
+    });
+
+    return () => unsubscribeApiServer();
+  }, []);
+
   // Realtime Firestore sync with onSnapshot for instant membership updates
   useEffect(() => {
     if (userProfile.isLoggedIn && userProfile.id) {

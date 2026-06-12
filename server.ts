@@ -107,7 +107,13 @@ Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussa
       res.json({ text: replyText });
     } catch (err: any) {
       console.error("[Santri AI Server Error]:", err);
-      res.status(500).json({ error: err.message || "Gagal berkomunikasi dengan Santri AI" });
+      const errMsg = err.message || "";
+      if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
+        return res.status(503).json({ 
+          error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
+        });
+      }
+      res.status(500).json({ error: errMsg || "Gagal berkomunikasi dengan Santri AI" });
     }
   });
 

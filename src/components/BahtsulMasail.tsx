@@ -47,6 +47,22 @@ import { MOCK_KITABS } from '../data/mockData';
 import KitabReader from './KitabReader';
 import BahtsulMasailMyPosts from './BahtsulMasailMyPosts';
 
+// Helper to derive API URL for Capacitor or Web
+const getApiUrl = (path: string): string => {
+  const isCapacitor = typeof window !== 'undefined' && (
+    !!(window as any).Capacitor || 
+    window.location.protocol === 'capacitor:' || 
+    (window.location.protocol === 'http:' && window.location.hostname === 'localhost' && !window.location.port)
+  );
+  
+  if (isCapacitor) {
+    const cachedUrl = localStorage.getItem('muara_api_server_url');
+    const fallbackUrl = 'https://ais-pre-5nryvql223g2kompd5rosg-139765732384.asia-southeast1.run.app';
+    return `${cachedUrl || fallbackUrl}${path}`;
+  }
+  return path;
+};
+
 interface BahtsulMasailProps {
   userProfile: UserProfile;
   isOpen: boolean;
@@ -590,19 +606,43 @@ TATA TERTIB JAWABAN:
 2. Jelaskan permasalahan ini berdasarkan sudut pandang kitab-kitab salafiyah (kitab kuning) yang ada di aplikasi MUARA.
 3. Pastikan Anda menyebutkan nama kitab khazanah klasik sebagai sandaran rujukan secara eksplisit dalam teks jawaban Anda, dengan cara WAJIB menggunakan awalan @ diikuti nama kitabnya (contoh: @Safinatun Najah, @Al-Hikam, @Riyadhus Shalihin, @Fathul Mu'in, @Nashaihul Ibad, @Arbain Nawawi, @Tafsir Jalalain) agar sistem aplikasi kami bisa otomatis membidani link pembukaan kitab tersebut bagi pembaca. Jangan gunakan tanda kurung, bintangi, atau titik setelah tanda @. Contoh: "...hal ini dijelaskan dalam kitab @Safinatun Najah pada bab..." sehingga kata @Safinatun Najah berdiri utuh dan persis sama dengan judul aslinya.`;
 
-          const response = await fetch('/api/gemini/santri-ai', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              prompt: combinedPrompt,
-              latestKitabTitles: latestKitabTitles
-            })
-          });
+          // Request with retry and support for Capacitor server url
+          let response: Response | null = null;
+          const targetUrl = getApiUrl('/api/gemini/santri-ai');
+          const MAX_RETRIES = 3;
+          const RETRY_DELAY_MS = 1500;
 
-          if (!response.ok) {
-            throw new Error(`API returned status ${response.status}`);
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+              console.log(`[Bahtsul Masail Bot Fetch] Menghubungi ${targetUrl} (Percobaan ${attempt}/${MAX_RETRIES})...`);
+              response = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  prompt: combinedPrompt,
+                  latestKitabTitles: latestKitabTitles
+                })
+              });
+              
+              if (response.status === 503 && attempt < MAX_RETRIES) {
+                console.warn(`[Bahtsul Masail Bot Fetch] Mendapatkan 503, mencoba lagi dalam ${RETRY_DELAY_MS}ms...`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                continue;
+              }
+              
+              break;
+            } catch (err: any) {
+              console.warn(`[Bahtsul Masail Bot Fetch] Percobaan ${attempt}/${MAX_RETRIES} gagal:`, err);
+              if (attempt < MAX_RETRIES) {
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+              }
+            }
+          }
+
+          if (!response || !response.ok) {
+            throw new Error(`API returned non-ok status or empty response`);
           }
 
           const resData = await response.json();
