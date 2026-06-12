@@ -1,37 +1,49 @@
 import express from "express";
+import path from "path";
+import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 
-const app = express();
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
 
-// Configure body parsers
-app.use(express.json());
+  // Configure CORS middleware to enable Capacitor access
+  app.use(cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
+  }));
 
-// API route for Santri AI
-app.post("/api/gemini/santri-ai", async (req, res) => {
-  try {
-    const { prompt, history, latestKitabTitles } = req.body;
-    
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-      return res.status(500).json({ 
-        error: "Sistem asisten belum terkonfigurasi secara lengkap. Kunci `GEMINI_API_KEY` belum disetel di bagian Environment Variables di Vercel." 
-      });
-    }
+  // Configure body parsers
+  app.use(express.json());
 
-    // Initialize the official @google/genai SDK on the server according to guidelines
-    const ai = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
+  // API route for Santri AI
+  app.post("/api/gemini/santri-ai", async (req, res) => {
+    try {
+      const { prompt, history, latestKitabTitles } = req.body;
+      
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+        return res.status(500).json({ 
+          error: "Sistem asisten belum terkonfigurasi secara lengkap. Kunci `GEMINI_API_KEY` belum disetel di bagian Settings > Secrets di AI Studio." 
+        });
       }
-    });
 
-    let systemInstruction = `Kamu adalah 'Santri AI', asisten digital rujukan Kitab Kuning ahli fiqih, tasawuf, akidah, hadis, dll dari aplikasi MUARA. Tugasmu adalah mendampingi penelitian keagamaan pengguna, menjawab pertanyaan secara santun, ilmiah, berakhlak mulia, dan berbasis kitab kuning.
+      // Initialize the official @google/genai SDK on the server according to guidelines
+      const ai = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      let systemInstruction = `Kamu adalah 'Santri AI', asisten digital rujukan Kitab Kuning ahli fiqih, tasawuf, akidah, hadis, dll dari aplikasi MUARA. Tugasmu adalah mendampingi penelitian keagamaan pengguna, menjawab pertanyaan secara santun, ilmiah, berakhlak mulia, dan berbasis kitab kuning.
 
 --- TATA TERTIB & STRUKTUR BALASAN ---
 1. MENULIS BERBAGAI SISI PANDANGAN KITAB:
@@ -68,49 +80,70 @@ Pahamilah gaya bahasa santri sehari-hari, bahasa gaul anak muda Indonesia, singk
 --- ATURAN SALAM (GREETING WORDS) ---
 Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussalam wr. wb") HANYA boleh diucapkan di sesi pembuka awal percakapan saja (salam sambutan bawaan aplikasi). Untuk setiap jawaban/giliran obrolan selanjutnya dalam riwayat chat (chat history), kamu DILARANG KERAS mengucapkan, menuliskan, atau mengulang lafadz salam tersebut lagi agar jalannya percakapan terasa terus mengalir hangat, efisien, dan santun tanpa pengulangan salam yang berlebihan.`;
 
-    if (latestKitabTitles && Array.isArray(latestKitabTitles) && latestKitabTitles.length > 0) {
-      systemInstruction += `\n\n--- KITAB SAAT INI YANG TERSEDIA DI APLIKASI MUARA (Update Dinamis) ---\nDaftar kitab kuning: ${latestKitabTitles.join(', ')}.`;
-    }
-
-    // Structure contents. If history is supplied, build the dialogue structure.
-    const contentsParts: any[] = [];
-    if (history && Array.isArray(history)) {
-      history.forEach((msg: { role: 'user' | 'model'; parts: { text: string }[] }) => {
-        contentsParts.push({
-          role: msg.role === 'model' ? 'model' : 'user',
-          parts: [{ text: msg.parts[0].text }]
-        });
-      });
-    }
-    
-    // Append current prompt/query
-    contentsParts.push({
-      role: "user",
-      parts: [{ text: prompt }]
-    });
-
-    // Generate response using gemini-3.5-flash as the recommended model
-    const result = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contentsParts,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.3,
+      if (latestKitabTitles && Array.isArray(latestKitabTitles) && latestKitabTitles.length > 0) {
+        systemInstruction += `\n\n--- KITAB SAAT INI YANG TERSEDIA DI APLIKASI MUARA (Update Dinamis) ---\nDaftar kitab kuning: ${latestKitabTitles.join(', ')}.`;
       }
-    });
 
-    const replyText = result.text || "Terjadi kesalahan dalam memberikan respon.";
-    res.json({ text: replyText });
-  } catch (err: any) {
-    console.error("[Santri AI Server Error]:", err);
-    const errMsg = err.message || "";
-    if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
-      return res.status(503).json({ 
-        error: "maaf ya bro dikarnakan permintaan jawaban saat ini sedang penuh, silahkan coba lagi nanti" 
+      // Structure contents. If history is supplied, build the dialogue structure.
+      const contentsParts: any[] = [];
+      if (history && Array.isArray(history)) {
+        history.forEach((msg: { role: 'user' | 'model'; parts: { text: string }[] }) => {
+          contentsParts.push({
+            role: msg.role === 'model' ? 'model' : 'user',
+            parts: [{ text: msg.parts[0].text }]
+          });
+        });
+      }
+      
+      // Append current prompt/query
+      contentsParts.push({
+        role: "user",
+        parts: [{ text: prompt }]
       });
-    }
-    res.status(500).json({ error: errMsg || "Gagal berkomunikasi dengan Santri AI" });
-  }
-});
 
-export default app;
+      // Generate response using gemini-3.5-flash as the recommended model
+      const result = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: contentsParts,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.3,
+        }
+      });
+
+      const replyText = result.text || "Terjadi kesalahan dalam memberikan respon.";
+      res.json({ text: replyText });
+    } catch (err: any) {
+      console.error("[Santri AI Server Error]:", err);
+      const errMsg = err.message || "";
+      if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
+        return res.status(503).json({ 
+          error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
+        });
+      }
+      res.status(500).json({ error: errMsg || "Gagal berkomunikasi dengan Santri AI" });
+    }
+  });
+
+  // Vite integration middleware
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  // Bind to port 3000 and 0.0.0.0
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[MUARA Server] Server is actively listening on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
