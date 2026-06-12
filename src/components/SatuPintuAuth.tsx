@@ -57,7 +57,7 @@ const getFriendlyErrorMessage = (err: any, fallbackMessage: string): string => {
     errText.includes('fetch failed') ||
     errText.includes('network-request-failed')
   ) {
-    return 'bro miskin ya,beli paketnya dulu dong baru lanjutkan,,!!';
+    return 'bro miskin ya,modal dikit dong bro,beli paketnya dulu baru lanjutkan,,!!';
   }
   return fallbackMessage;
 };
@@ -154,15 +154,12 @@ export default function SatuPintuAuth({
       setLoginPassword('');
     } catch (err: any) {
       console.error('Error logging in:', err);
-      let msg = 'Kredensial tidak valid. Silakan gunakan password yang kuat atau registrasikan akun baru Anda.';
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        msg = 'Email atau password tidak sesuai. Silakan periksa kembali akun Anda.';
-      } else if (err.code === 'auth/invalid-email') {
-        msg = 'Format alamat email tidak valid.';
-      } else if (err.code === 'auth/network-request-failed') {
+      let msg = 'cek dulu dong bro untuk tulisannya atau daftar dulu kalo belum punya akun,jangan maen masuk masuk aja,,!!!';
+      const code = err?.code || '';
+      const errMsg = String(err?.message || '').toLowerCase();
+      
+      if (code === 'auth/network-request-failed' || errMsg.includes('network') || !navigator.onLine) {
         msg = 'Gagal terhubung ke jaringan. Silakan periksa koneksi internet Anda.';
-      } else if (err.message) {
-        msg = err.message;
       }
       setLoginError(getFriendlyErrorMessage(err, msg));
     } finally {
@@ -505,11 +502,10 @@ export default function SatuPintuAuth({
               <button
                 type="button"
                 onClick={() => {
+                  window.dispatchEvent(new CustomEvent('muara-open-membership'));
                   const btn = document.getElementById('menu-btn-membership');
                   if (btn) {
                     btn.click();
-                  } else {
-                    alert('Silakan gunakan tombol Membership pada halaman Beranda utama.');
                   }
                 }}
                 className="flex items-center justify-between p-3.5 rounded-xl border border-slate-150 bg-white hover:border-amber-200 hover:bg-amber-50/10 hover:shadow-xs transition-with duration-200 text-left cursor-pointer group"

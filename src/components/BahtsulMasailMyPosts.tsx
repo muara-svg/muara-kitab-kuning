@@ -16,6 +16,7 @@ interface MasailProblem {
   commentsCount: number;
   createdAt: string;
   pinned?: boolean;
+  pinnedUntil?: string | null;
   aiAutoReplied?: boolean;
 }
 

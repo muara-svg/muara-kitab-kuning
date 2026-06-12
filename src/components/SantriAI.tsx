@@ -51,7 +51,7 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
     {
       id: 'welcome',
       sender: 'ai',
-      text: "Assalamu'alaikum wr. wb. Saya **Santri AI**, asisten digital ahli kitab kuning dari aplikasi MUARA. Silakan tanyakan hal-hal keagamaan (fiqih, tasawuf, akidah, hadis, dll), saya akan merujuk langsung dari khazanah kitab-kitab salafiyah di dalam aplikasi MUARA saja.",
+      text: "Assalamu'alaikum wr. wb. Saya **Santri AI**, asisten digital ahli kitab kuning dari aplikasi MUARA. Silakan tanyakan hal-hal keagamaan (fiqih, tasawuf, akidah, hadis, dll), saya akan merujuk langsung dari khazanah kitab-kitab salafiyah di dalam aplikasi MUARA.",
       timestamp: new Date()
     }
   ]);
@@ -139,7 +139,15 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       console.error(e);
     }
 
-    const merged = [...MOCK_KITABS, ...list];
+    // Deduplicate the merged kitab list by ID
+    const seenMergedIds = new Set<string>();
+    const merged: any[] = [];
+    [...MOCK_KITABS, ...list].forEach(item => {
+      if (item.id && !seenMergedIds.has(item.id)) {
+        seenMergedIds.add(item.id);
+        merged.push(item);
+      }
+    });
     setKitabCollection(merged);
     return merged;
   };
@@ -586,13 +594,13 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="relative z-10 w-72 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-4 space-y-3.5 overflow-hidden text-slate-100"
+              className="relative z-10 w-72 bg-[#064e3b] border border-emerald-700/60 rounded-2xl shadow-2xl p-4 space-y-3.5 overflow-hidden text-emerald-50"
             >
               {/* Premium Top Line Theme Indicator */}
               <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-500 via-yellow-400 to-amber-500" />
               
               {/* Dropdown Header */}
-              <div className="flex items-center justify-between border-b border-slate-800/60 pb-2">
+              <div className="flex items-center justify-between border-b border-emerald-800/50 pb-2">
                 <div className="flex items-center gap-1.5 text-amber-400">
                   <Crown className="h-3.5 w-3.5 text-amber-400 animate-pulse" />
                   <span className="font-mono text-[10px] font-extrabold uppercase tracking-widest text-amber-400">Khidmat Syariah MUARA</span>
@@ -600,7 +608,7 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
                 <button 
                   type="button"
                   onClick={() => setIsMenuDropdownOpen(false)}
-                  className="text-slate-400 hover:text-slate-200 transition-colors bg-transparent border-none p-1 cursor-pointer"
+                  className="text-emerald-100 hover:text-white transition-colors bg-transparent border-none p-1 cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -620,11 +628,11 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
                       setIsMinimized(false);
                     }
                   }}
-                  className="w-full text-left bg-slate-950/40 hover:bg-emerald-950/20 border border-slate-850 hover:border-emerald-900 p-3 rounded-xl flex items-start gap-3 transition-colors cursor-pointer"
+                  className="w-full text-left bg-emerald-950/55 hover:bg-emerald-900/30 border border-emerald-800/50 hover:border-emerald-500/50 p-3 rounded-xl flex items-start gap-3 transition-colors cursor-pointer"
                 >
-                  <div className="h-9 w-9 rounded-lg bg-emerald-500/15 text-emerald-400 flex flex-col items-center justify-center border border-emerald-500/20 shadow-inner shrink-0 overflow-hidden">
+                  <div className="h-9 w-9 rounded-lg bg-emerald-500/20 text-emerald-300 flex flex-col items-center justify-center border border-emerald-500/20 shadow-inner shrink-0 overflow-hidden">
                     {/* Handcrafted Kopiah Santri Icon Inside */}
-                    <div className="w-3.5 h-1.5 bg-neutral-950 rounded-t-[1.5px] border border-neutral-900 z-10 -mb-[1px]" />
+                    <div className="w-3.5 h-1.5 bg-neutral-950 rounded-t-[1.5px] border border-neutral-800 z-10 -mb-[1px]" />
                     <div className="w-3 h-3 bg-amber-100 rounded-full border border-emerald-800/10 flex items-center justify-center overflow-hidden z-0">
                       <div className="w-1.5 h-0.5 border-b border-emerald-950/40 rounded-full mt-0.5" />
                     </div>
@@ -632,10 +640,10 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="font-extrabold text-xs text-slate-200">Santri AI</span>
-                      <span className="bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 text-[8px] font-bold font-mono px-1 py-0.5 rounded uppercase tracking-wider scale-90">BETA AI</span>
+                      <span className="font-extrabold text-xs text-white">Santri AI</span>
+                      <span className="bg-emerald-500/30 border border-emerald-500/25 text-emerald-300 text-[8px] font-bold font-mono px-1 py-0.5 rounded uppercase tracking-wider scale-90">PREMIUM</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">Rujukan mufashal literatur kitab kuning secara instan.</p>
+                    <p className="text-[10px] text-emerald-200/90 mt-0.5 leading-snug">Rujukan mufashal literatur kitab kuning secara instan.</p>
                   </div>
                 </button>
 
@@ -650,17 +658,17 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
                       setIsBahtsulOpen(true);
                     }
                   }}
-                  className="w-full text-left bg-slate-950/40 hover:bg-amber-950/20 border border-slate-850 hover:border-amber-900/40 p-3 rounded-xl flex items-start gap-3 transition-colors cursor-pointer"
+                  className="w-full text-left bg-emerald-950/55 hover:bg-emerald-900/30 border border-emerald-800/50 hover:border-emerald-500/50 p-3 rounded-xl flex items-start gap-3 transition-colors cursor-pointer"
                 >
-                  <div className="h-9 w-9 rounded-lg bg-amber-500/15 text-amber-500 flex items-center justify-center p-1.5 border border-amber-500/20 shadow-inner shrink-0">
-                    <Users className="h-5 w-5 text-amber-550" />
+                  <div className="h-9 w-9 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center p-1.5 border border-amber-500/20 shadow-inner shrink-0">
+                    <Users className="h-5 w-5 text-amber-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="font-extrabold text-xs text-slate-200">Bahtsul Masail</span>
+                      <span className="font-extrabold text-xs text-white">Bahtsul Masail</span>
                       <span className="bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[8px] font-bold font-mono px-1 py-0.5 rounded uppercase tracking-wider scale-90">PREMIUM</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">Musyawarah keabsahan hukum islam antar-anggota premium.</p>
+                    <p className="text-[10px] text-emerald-200/90 mt-0.5 leading-snug">Musyawarah keabsahan hukum islam antar-anggota premium.</p>
                   </div>
                 </button>
               </div>

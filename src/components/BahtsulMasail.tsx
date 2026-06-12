@@ -71,6 +71,7 @@ interface MasailProblem {
   commentsCount: number;
   createdAt: string;
   pinned?: boolean;
+  pinnedUntil?: string | null;
   aiAutoReplied?: boolean;
 }
 
@@ -258,10 +259,12 @@ export default function BahtsulMasail({
     postsLimit: number;
     maxLifetimeHours: number;
     enableSantriAI: boolean;
+    santriAIDelayMinutes: number;
   }>({
     postsLimit: 5,
     maxLifetimeHours: 0,
-    enableSantriAI: true
+    enableSantriAI: true,
+    santriAIDelayMinutes: 15
   });
   const [itemsToShow, setItemsToShow] = useState(5);
 
@@ -326,7 +329,8 @@ export default function BahtsulMasail({
         const postsLimit = Number(d.postsLimit) || 5;
         const maxLifetimeHours = Number(d.maxLifetimeHours) || 0;
         const enableSantriAI = d.enableSantriAI !== undefined ? !!d.enableSantriAI : true;
-        setBmSettings({ postsLimit, maxLifetimeHours, enableSantriAI });
+        const santriAIDelayMinutes = d.santriAIDelayMinutes !== undefined ? Number(d.santriAIDelayMinutes) : 15;
+        setBmSettings({ postsLimit, maxLifetimeHours, enableSantriAI, santriAIDelayMinutes });
         setItemsToShow(postsLimit);
       } else {
         // Fallback local storage
@@ -337,7 +341,8 @@ export default function BahtsulMasail({
             setBmSettings({
               postsLimit: parsed.postsLimit || 5,
               maxLifetimeHours: parsed.maxLifetimeHours || 0,
-              enableSantriAI: parsed.enableSantriAI !== undefined ? !!parsed.enableSantriAI : true
+              enableSantriAI: parsed.enableSantriAI !== undefined ? !!parsed.enableSantriAI : true,
+              santriAIDelayMinutes: parsed.santriAIDelayMinutes !== undefined ? Number(parsed.santriAIDelayMinutes) : 15
             });
             setItemsToShow(parsed.postsLimit || 5);
           } catch (e) {
@@ -354,7 +359,8 @@ export default function BahtsulMasail({
           setBmSettings({
             postsLimit: parsed.postsLimit || 5,
             maxLifetimeHours: parsed.maxLifetimeHours || 0,
-            enableSantriAI: parsed.enableSantriAI !== undefined ? !!parsed.enableSantriAI : true
+            enableSantriAI: parsed.enableSantriAI !== undefined ? !!parsed.enableSantriAI : true,
+            santriAIDelayMinutes: parsed.santriAIDelayMinutes !== undefined ? Number(parsed.santriAIDelayMinutes) : 15
           });
           setItemsToShow(parsed.postsLimit || 5);
         } catch (e) {
@@ -430,6 +436,16 @@ export default function BahtsulMasail({
           }
         }
 
+        const isStillPinned = !!data.pinned && (!data.pinnedUntil || new Date(data.pinnedUntil).getTime() > nowMs);
+
+        // Auto cleanse expired pinned on client read
+        if (!!data.pinned && data.pinnedUntil && new Date(data.pinnedUntil).getTime() < nowMs) {
+          updateDoc(doc(firestore, 'bahtsul_masail', docSnap.id), {
+            pinned: false,
+            pinnedUntil: null
+          }).catch((err) => {});
+        }
+
         list.push({
           id: docSnap.id,
           userId: data.userId || '',
@@ -443,7 +459,8 @@ export default function BahtsulMasail({
           likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
           commentsCount: Number(data.commentsCount || 0),
           createdAt: createdStr,
-          pinned: !!data.pinned,
+          pinned: isStillPinned,
+          pinnedUntil: data.pinnedUntil || null,
           aiAutoReplied: !!data.aiAutoReplied,
         });
       });
@@ -513,15 +530,15 @@ export default function BahtsulMasail({
             {
               id: 'sample-2',
               userId: 'user-vip',
-              userName: 'Kiai Zainal Arifin',
+              userName: 'Kiai Shalahuddin Syarif',
               userAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150',
-              userBio: 'Khadimul Ma\'had Pondok Pesantren Salafiyah Giri • Senior VIP',
+              userBio: 'Khadimul Ma\'had Pondok Pesantren Giri Kediri • Senior VIP',
               title: 'Batasan Kebolehan Donor Organ Tubuh dalam Keadaan Koma',
               content: 'Kemajuan medis melahirkan opsi transplantasi donor kornea mata atau organ vital lainnya. Bagaimana keabsahan wasiat donor dari seseorang yang sedang dalam kondisi mati otak menurut syariat islam (hifdzan nafs)? Apakah murni dilarang keras karena merusak kehormatan jasat mukmin (kasri \'adzmihil mayyiti), atau ada rukhsah hajat maslahah?',
               referenceKitab: 'Nihayatul Muhtaj Juz 8, Bughyatul Mustarsyidin, I\'anatut Thalibin',
               likesCount: 8,
               likedBy: [],
-              commentsCount: 1,
+              commentsCount: 0,
               createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
               pinned: false
             }
@@ -537,17 +554,18 @@ export default function BahtsulMasail({
     return () => unsubscribe();
   }, [isOpen, isPremiumUser, bmSettings]);
 
-  // Automated background check: Trigger Santri AI auto-responder for postings unanswered for >= 30 minutes
+  // Automated background check: Trigger Santri AI auto-responder for postings unanswered for >= admin delay minutes
   useEffect(() => {
     if (!isOpen || !bmSettings.enableSantriAI) return;
 
     const runBackgroundCheck = async () => {
       const nowMs = Date.now();
+      const delayMin = bmSettings.santriAIDelayMinutes || 15;
       const unreplied = problems.filter(prob => {
         const ageMs = nowMs - new Date(prob.createdAt).getTime();
         const ageMin = ageMs / (1000 * 60);
-        // Is it unanswered, older than 30 minutes, and Santri AI hasn't replied to it yet?
-        return ageMin >= 30 && prob.commentsCount === 0 && !prob.aiAutoReplied;
+        // Is it unanswered, older than configured minutes, and Santri AI hasn't replied to it yet?
+        return ageMin >= delayMin && prob.commentsCount === 0 && !prob.aiAutoReplied;
       });
 
       if (unreplied.length === 0) return;
@@ -683,31 +701,7 @@ TATA TERTIB JAWABAN:
         if (cachedCommentsStr) {
           setComments(JSON.parse(cachedCommentsStr));
         } else {
-          // Seed mocks
-          const defaultComments: Comment[] = [
-            {
-              id: 'c-1',
-              userId: 'user-admin',
-              userName: 'Kiai Zainal Arifin',
-              userAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150',
-              userBio: 'Khadimul Ma\'had Pondok Pesantren Salafiyah Giri • Senior VIP',
-              text: 'Menurut fatwa Imam Ramli di dalam Nihayatul Muhtaj, asal hukum merusak jasad mayit adalah haram. Namun demi menyelamatkan nyawa muslim lain (hifdzu nafsin muhtaramah), diperbolehkan donor jika tidak ada mubaadal lain yang sah. Maslahat mutlaqah didahulukan.',
-              createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-              parentId: null
-            },
-            {
-              id: 'c-2',
-              userId: 'user-3',
-              userName: 'Ustadz Ahmad Fauzi',
-              userAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
-              userBio: 'Pengasuh Madrasah Diniyah Takmiliyah Awaliyah Al-Aqlam',
-              text: 'Sependapat, kiai. Di dalam kitab Al-Asybah wan Nadzair pun kaidahnya jelas: "Ad-Dharuratu Tubihul Mahzhurat" (Keadaan darurat membolehkan hal-hal yang semula dilarang). Selama wasiat disetujui ahli waris.',
-              createdAt: new Date(Date.now() - 3600000 * 10).toISOString(),
-              parentId: 'c-1',
-              replyToName: 'Kiai Zainal Arifin'
-            }
-          ];
-          setComments(defaultComments);
+          setComments([]);
         }
       } catch (err) {
         console.error(err);
@@ -1126,7 +1120,7 @@ TATA TERTIB JAWABAN:
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex flex-col bg-emerald-950/20 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 overflow-hidden flex flex-col bg-[#011c14]/75 backdrop-blur-md">
       
       {/* BACKGROUND DISMISSAL LAYER */}
       <div className="absolute inset-0 z-10" onClick={onClose} />

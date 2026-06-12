@@ -1269,10 +1269,10 @@ export default function App() {
                   <BookOpen className="h-6 w-6 text-emerald-600 animate-pulse" />
                 </div>
                 <h3 className="font-extrabold text-slate-850 text-sm sm:text-base leading-snug">
-                  Apakah aplikasi Muara ingin bisa di buka di saat offline?
+                  Apakah aplikasi Muara ingin bisa dibuka di saat offline?
                 </h3>
                 <p className="text-[11px] text-slate-500 leading-relaxed text-center">
-                  Dengan mengizinkan akses offline, sistem akan otomatis melakukan pra-unduh (pre-download) seluruh kitab kuning ke penyimpanan perangkat agar Anda dapat membaca serta belajar secara luring kapan saja.
+                  Dengan mengizinkan akses offline, sistem akan otomatis menyimpan kitab kuning di penyimpanan lokal sehingga kitab tersebut bisa dibuka di saat kamu sedang offline.
                 </p>
               </div>
 
@@ -1281,9 +1281,9 @@ export default function App() {
                 <div className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-150 text-[10px] sm:text-xs">
                   <BookOpen className="h-4.5 w-4.5 text-emerald-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="block font-bold text-slate-800">Pra-unduh Kitab Otomatis</span>
+                    <span className="block font-bold text-slate-800">Simpan Kitab Otomatis</span>
                     <span className="text-[9px] text-slate-500 block mt-0.5 leading-snug">
-                      Menyimpan berkas seluruh kitab kuning secara otomatis di penyimpanan lokal untuk mutala'ah luring tanpa kuota.
+                      Menyimpan kitab secara otomatis di penyimpanan lokal untuk mutholaah secara offline.
                     </span>
                   </div>
                 </div>
@@ -1348,7 +1348,7 @@ export default function App() {
                   }}
                   className="w-full py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl font-bold text-xs shadow-md transition-colors cursor-pointer text-center"
                 >
-                  Ya, Izinkan & Download
+                  Ya, Izinkan
                 </button>
 
                 <button

@@ -49,6 +49,7 @@ interface MasailProblem {
   commentsCount: number;
   createdAt: string;
   pinned?: boolean;
+  pinnedUntil?: string | null;
   aiAutoReplied?: boolean;
 }
 
@@ -59,13 +60,21 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
   const [settings, setSettings] = useState({
     postsLimit: 5,
     maxLifetimeHours: 0,
-    enableSantriAI: true
+    enableSantriAI: true,
+    santriAIDelayMinutes: 15
   });
   const [savingSettings, setSavingSettings] = useState(false);
 
   // States for confirmation dialogs
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<MasailProblem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const [bumpConfirmTarget, setBumpConfirmTarget] = useState<MasailProblem | null>(null);
+  const [isBumping, setIsBumping] = useState(false);
+
+  const [pinConfirmTarget, setPinConfirmTarget] = useState<MasailProblem | null>(null);
+  const [selectedPinDuration, setSelectedPinDuration] = useState<number>(72);
+  const [isPinning, setIsPinning] = useState(false);
 
   // Load postings & settings
   useEffect(() => {
@@ -79,20 +88,37 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
           setSettings({
             postsLimit: Number(d.postsLimit) || 5,
             maxLifetimeHours: Number(d.maxLifetimeHours) || 0,
-            enableSantriAI: d.enableSantriAI !== undefined ? !!d.enableSantriAI : true
+            enableSantriAI: d.enableSantriAI !== undefined ? !!d.enableSantriAI : true,
+            santriAIDelayMinutes: Number(d.santriAIDelayMinutes) || 15
           });
         } else {
           // Check local storage fallback
           const localSettingsStr = localStorage.getItem('muara_bahtsul_settings');
           if (localSettingsStr) {
-            setSettings(JSON.parse(localSettingsStr));
+            const parsed = JSON.parse(localSettingsStr);
+            setSettings({
+              postsLimit: parsed.postsLimit || 5,
+              maxLifetimeHours: parsed.maxLifetimeHours || 0,
+              enableSantriAI: parsed.enableSantriAI !== undefined ? !!parsed.enableSantriAI : true,
+              santriAIDelayMinutes: Number(parsed.santriAIDelayMinutes) || 15
+            });
           }
         }
       } catch (err) {
         console.warn("Error loading settings Firestore:", err);
         const localSettingsStr = localStorage.getItem('muara_bahtsul_settings');
         if (localSettingsStr) {
-          setSettings(JSON.parse(localSettingsStr));
+          try {
+            const parsed = JSON.parse(localSettingsStr);
+            setSettings({
+              postsLimit: parsed.postsLimit || 5,
+              maxLifetimeHours: parsed.maxLifetimeHours || 0,
+              enableSantriAI: parsed.enableSantriAI !== undefined ? !!parsed.enableSantriAI : true,
+              santriAIDelayMinutes: Number(parsed.santriAIDelayMinutes) || 15
+            });
+          } catch (e) {
+            console.error(e);
+          }
         }
       }
     };
@@ -102,8 +128,21 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
     // 2. Realtime listener for posts
     const unsub = onSnapshot(collection(firestore, 'bahtsul_masail'), (snap) => {
       const list: MasailProblem[] = [];
+      const nowMs = Date.now();
       snap.forEach((d) => {
         const data = d.data();
+        
+        // Active pin check
+        const isStillPinned = !!data.pinned && (!data.pinnedUntil || new Date(data.pinnedUntil).getTime() > nowMs);
+        
+        // If expired, clean up Firestore in the background
+        if (!!data.pinned && data.pinnedUntil && new Date(data.pinnedUntil).getTime() < nowMs) {
+          updateDoc(doc(firestore, 'bahtsul_masail', d.id), {
+            pinned: false,
+            pinnedUntil: null
+          }).catch((err) => console.warn("Background auto-unpin failed:", err));
+        }
+
         list.push({
           id: d.id,
           userId: data.userId || '',
@@ -117,7 +156,8 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
           likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
           commentsCount: Number(data.commentsCount || 0),
           createdAt: data.createdAt || new Date().toISOString(),
-          pinned: !!data.pinned,
+          pinned: isStillPinned,
+          pinnedUntil: data.pinnedUntil || null,
           aiAutoReplied: !!data.aiAutoReplied
         });
       });
@@ -197,37 +237,77 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
     }
   };
 
-  // Toggle pin/sematkan post
-  const handleTogglePin = async (prob: MasailProblem) => {
-    const nextPinState = !prob.pinned;
+  // Pin and Unpin post actions with custom duration
+  const handlePinPost = async () => {
+    if (!pinConfirmTarget) return;
+    setIsPinning(true);
     try {
-      await updateDoc(doc(firestore, 'bahtsul_masail', prob.id), {
-        pinned: nextPinState
+      const durationMs = selectedPinDuration * 60 * 60 * 1000;
+      const pinnedUntil = new Date(Date.now() + durationMs).toISOString();
+
+      await updateDoc(doc(firestore, 'bahtsul_masail', pinConfirmTarget.id), {
+        pinned: true,
+        pinnedUntil: pinnedUntil
       });
-      onSuccess(nextPinState ? "Postingan berhasil disematkan di paling atas!" : "Penyematan postingan dilepas.");
-    } catch (err) {
-      // Offline fallback
-      const updated = problems.map(p => p.id === prob.id ? { ...p, pinned: nextPinState } : p);
+
+      const updated = problems.map(p => p.id === pinConfirmTarget.id ? { ...p, pinned: true, pinnedUntil } : p);
       setProblems(updated);
       localStorage.setItem('muara_bahtsul_cache', JSON.stringify(updated));
-      onSuccess(nextPinState ? "Postingan disematkan di Penyimpanan Lokal (Offline)." : "Semat dilepas offline.");
+
+      onSuccess(`Postingan "${pinConfirmTarget.title}" berhasil disematkan selama ${selectedPinDuration} jam!`);
+      setPinConfirmTarget(null);
+    } catch (err: any) {
+      console.error("Failed to pin post:", err);
+      onError("Gagal menyematkan postingan: " + err.message);
+    } finally {
+      setIsPinning(false);
     }
   };
 
-  // Naikan Postingan (Bump) to top (using date renewal)
-  const handleBumpPostCount = async (prob: MasailProblem) => {
-    const updatedTime = new Date().toISOString();
+  const handleUnpinPost = async () => {
+    if (!pinConfirmTarget) return;
+    setIsPinning(true);
     try {
-      await updateDoc(doc(firestore, 'bahtsul_masail', prob.id), {
-        createdAt: updatedTime
+      await updateDoc(doc(firestore, 'bahtsul_masail', pinConfirmTarget.id), {
+        pinned: false,
+        pinnedUntil: null
       });
-      onSuccess("Postingan berhasil dinaikkan ke urutan paling atas!");
-    } catch (err) {
-      // Offline fallback
-      const updated = problems.map(p => p.id === prob.id ? { ...p, createdAt: updatedTime } : p);
+
+      const updated = problems.map(p => p.id === pinConfirmTarget.id ? { ...p, pinned: false, pinnedUntil: null } : p);
       setProblems(updated);
       localStorage.setItem('muara_bahtsul_cache', JSON.stringify(updated));
-      onSuccess("Postingan dinaikkan offline.");
+
+      onSuccess(`Penyematan postingan "${pinConfirmTarget.title}" berhasil dilepas.`);
+      setPinConfirmTarget(null);
+    } catch (err: any) {
+      console.error("Failed to unpin post:", err);
+      onError("Gagal melepas sematan postingan: " + err.message);
+    } finally {
+      setIsPinning(false);
+    }
+  };
+
+  // Naikan Postingan (Bump) to top (using date renewal after confirmation)
+  const handleBumpPost = async () => {
+    if (!bumpConfirmTarget) return;
+    setIsBumping(true);
+    const updatedTime = new Date().toISOString();
+    try {
+      await updateDoc(doc(firestore, 'bahtsul_masail', bumpConfirmTarget.id), {
+        createdAt: updatedTime
+      });
+      
+      const updated = problems.map(p => p.id === bumpConfirmTarget.id ? { ...p, createdAt: updatedTime } : p);
+      setProblems(updated);
+      localStorage.setItem('muara_bahtsul_cache', JSON.stringify(updated));
+
+      onSuccess("Postingan berhasil dinaikkan ke urutan paling atas!");
+      setBumpConfirmTarget(null);
+    } catch (err: any) {
+      console.error("Gagal menaikkan postingan:", err);
+      onError("Gagal menaikkan postingan: " + err.message);
+    } finally {
+      setIsBumping(false);
     }
   };
 
@@ -362,8 +442,8 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
                       {/* Bump / Naikkan postingan ke paling atas */}
                       <button
                         type="button"
-                        onClick={() => handleBumpPostCount(prob)}
-                        title="Naikan postingan ini agar berada di urutan teratas feed utama"
+                        onClick={() => setBumpConfirmTarget(prob)}
+                        title="Naikkan postingan ini agar berada di urutan teratas feed utama"
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10.5px] font-extrabold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-colors border-none cursor-pointer"
                       >
                         <ArrowUp className="h-3.5 w-3.5" />
@@ -373,7 +453,7 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
                       {/* Pin Post */}
                       <button
                         type="button"
-                        onClick={() => handleTogglePin(prob)}
+                        onClick={() => setPinConfirmTarget(prob)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10.5px] font-extrabold transition-all border-none cursor-pointer ${
                           prob.pinned 
                             ? 'bg-amber-100 text-amber-900 border border-amber-300' 
@@ -453,7 +533,7 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
             </div>
 
             {/* Setting 3: Auto-reply Santri AI Toggle */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 font-sans">
               <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
                 <Sparkles className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
                 <span>Pengaktifan Santri AI (Auto-Reply) pada Postingan</span>
@@ -467,9 +547,33 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
                 <option value="nonaktif">Nonaktif (Gunakan Diskusi Manual Antar Anggota Saja)</option>
               </select>
               <p className="text-[10px] text-slate-450 leading-relaxed">
-                Jika diaktifkan, program background check akan memindai pertanyaan baru. Jika tidak ada asatidz/pengguna lain yang menjawab dalam waktu <span className="font-bold text-emerald-800">30 menit minimalnya</span>, "Santri AI" (Gemini Pro API) otomatis ikut merumuskan kesimpulan awal berbasis database kitab suci salaf-muktabaroh, lengkap dengan rujukan kitab yang bisa diklik langsung.
+                Jika diaktifkan, program background check akan memindai pertanyaan baru. Jika tidak ada asatidz/pengguna lain yang menjawab dalam waktu <span className="font-bold text-emerald-800">{settings.santriAIDelayMinutes || 15} menit</span>, "Santri AI" (Gemini Pro API) otomatis ikut merumuskan kesimpulan awal berbasis database kitab suci salaf-muktabaroh, lengkap dengan rujukan kitab yang bisa diklik langsung.
               </p>
             </div>
+
+            {settings.enableSantriAI && (
+              <div className="space-y-1.5 pl-4 border-l-2 border-emerald-500/20 font-sans">
+                <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Waktu Jawaban Santri AI (Delay Deteksi)</span>
+                </label>
+                <select
+                  value={settings.santriAIDelayMinutes}
+                  onChange={(e) => setSettings({ ...settings, santriAIDelayMinutes: Number(e.target.value) })}
+                  className="w-full bg-slate-50 border border-slate-250 rounded-xl p-3 text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 transition-colors cursor-pointer"
+                >
+                  <option value={1}>1 Menit (Untuk Pengujian Instan)</option>
+                  <option value={5}>5 Menit (Respons Sangat Cepat)</option>
+                  <option value={10}>10 Menit (Premium Terjadwal)</option>
+                  <option value={15}>15 Menit (Rekomendasi Standar)</option>
+                  <option value={30}>30 Menit (Mode Santai)</option>
+                  <option value={60}>60 Menit (1 Jam - Terencana)</option>
+                </select>
+                <p className="text-[10px] text-slate-450 leading-relaxed font-sans">
+                  Menentukan berapa lama Santri AI akan menunggu bagi asatidz/pengguna nyata untuk merespon permasalahan baru sebelum akhirnya ia mencetuskan rumusan jawaban otomatis.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex justify-end">
@@ -491,7 +595,7 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
         </form>
       )}
 
-      {/* LUXURIOUS DELETE CONFIRMATION MODAL OVERLAY */}
+      {/* LUXURIOUS DELETE, BUMP, AND PIN CONFIRMATION MODALS */}
       <AnimatePresence>
         {deleteConfirmTarget && (
           <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -543,6 +647,175 @@ export default function AdminBahtsulMasail({ onSuccess, onError }: AdminBahtsulM
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* LUXURIOUS BUMP CONFIRMATION MODAL OVERLAY */}
+        {bumpConfirmTarget && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 border border-slate-205 shadow-2xl max-w-sm w-full relative text-center overflow-hidden text-slate-800 font-sans"
+            >
+              <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-600" />
+              
+              <div className="space-y-4 pt-4">
+                <div className="h-12 w-12 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 mx-auto border border-emerald-100">
+                  <ArrowUp className="h-6 w-6 stroke-[2.5]" />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <h4 className="font-extrabold text-sm sm:text-base text-slate-900 leading-snug">
+                    Konfirmasi Naikkan Postingan
+                  </h4>
+                  <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+                    Apakah Anda yakin ingin menaikkan postingan bahtsul masail ini ke urutan paling atas di feed teratas pengguna?
+                  </p>
+                  <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50 text-left text-emerald-900 font-bold font-serif text-[11px] max-h-24 overflow-y-auto mt-2">
+                    "{bumpConfirmTarget.title}"
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-2 font-mono">
+                    Urutan ini akan diperbarui secara otomatis secara real-time.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    disabled={isBumping}
+                    onClick={handleBumpPost}
+                    className="flex-1 py-2.5 bg-emerald-650 hover:bg-emerald-700 text-white rounded-xl font-extrabold text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer border-none flex items-center justify-center gap-1.5"
+                  >
+                    {isBumping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    <span>Ya, Naikkan</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBumping}
+                    onClick={() => setBumpConfirmTarget(null)}
+                    className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-xl font-bold text-xs transition-colors cursor-pointer bg-transparent"
+                  >
+                    Batalkan
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* LUXURIOUS PIN CONFIRMATION & SELECTION MODAL OVERLAY */}
+         {pinConfirmTarget && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 border border-slate-205 shadow-2xl max-w-md w-full relative overflow-hidden text-slate-800 font-sans"
+            >
+              <div className="absolute top-0 inset-x-0 h-1.5 bg-amber-500" />
+              
+              {pinConfirmTarget.pinned ? (
+                <div className="space-y-4 pt-4 text-center">
+                  <div className="h-12 w-12 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 mx-auto border border-amber-100">
+                    <Pin className="h-6 w-6 stroke-[2.5]" />
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <h4 className="font-extrabold text-sm sm:text-base text-slate-900 leading-snug">
+                      Konfirmasi Lepas Penyematan
+                    </h4>
+                    <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+                      Apakah Anda yakin ingin melepas status prioritas semat (Pinned) dari postingan berikut?
+                    </p>
+                    <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-100/50 text-left text-amber-900 font-bold font-serif text-[11px] max-h-24 overflow-y-auto mt-2">
+                      "{pinConfirmTarget.title}"
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      disabled={isPinning}
+                      onClick={handleUnpinPost}
+                      className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-extrabold text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer border-none flex items-center justify-center gap-1.5"
+                    >
+                      {isPinning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      <span>Ya, Lepas Pin</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPinning}
+                      onClick={() => setPinConfirmTarget(null)}
+                      className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-xl font-bold text-xs transition-colors cursor-pointer bg-transparent"
+                    >
+                      Batalkan
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 pt-4 text-left">
+                  <div className="h-12 w-12 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 mx-auto border border-amber-100">
+                    <Pin className="h-6 w-6 stroke-[2.5] fill-current" />
+                  </div>
+                  
+                  <div className="space-y-1.5 text-center">
+                    <h4 className="font-extrabold text-sm sm:text-base text-slate-900 leading-snug">
+                      Konfirmasi Sematkan Postingan
+                    </h4>
+                    <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+                      Pilih berapa lama postingan berikut akan disematkan di paling atas forum Bahtsul Masail:
+                    </p>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-left text-slate-900 font-bold font-serif text-[11px] max-h-20 overflow-y-auto mt-2">
+                      "{pinConfirmTarget.title}"
+                    </div>
+                  </div>
+
+                  {/* HIGH-END DROPDOWN SELECTION FOR EXPIRATION TIMES */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">Pilih Durasi Semat (Rentang Waktu)</label>
+                    <select
+                      value={selectedPinDuration}
+                      onChange={(e) => setSelectedPinDuration(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-250 rounded-xl p-3 text-xs font-semibold text-slate-800 outline-none focus:border-amber-500 transition-colors cursor-pointer"
+                    >
+                      <option value={1}>1 Jam (Uji Coba Cepat)</option>
+                      <option value={24}>24 Jam (1 Hari)</option>
+                      <option value={48}>48 Jam (2 Hari)</option>
+                      <option value={72}>72 Jam (3 Hari - Standar Kiai)</option>
+                      <option value={168}>168 Jam (1 Minggu / 7 Hari)</option>
+                      <option value={720}>720 Jam (30 Hari / 1 Bulan)</option>
+                      <option value={4320}>4320 Jam (180 Hari / 6 Bulan)</option>
+                      <option value={8640}>8640 Jam (360 Hari / 1 Tahun)</option>
+                    </select>
+                    <span className="text-[10px] text-slate-450 leading-relaxed block">
+                      * Setelah durasi waktu habis, postingan akan otomatis turun ke urutan biasa sesuai tanggal terbitnya secara mandiri.
+                    </span>
+                  </div>
+
+                  <div className="pt-2 flex gap-3 text-center">
+                    <button
+                      type="button"
+                      disabled={isPinning}
+                      onClick={handlePinPost}
+                      className="flex-1 py-2.5 bg-[#064e3b] hover:bg-emerald-900 text-white rounded-xl font-extrabold text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer border-none flex items-center justify-center gap-1.5"
+                    >
+                      {isPinning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      <span>Ya, Sematkan</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPinning}
+                      onClick={() => setPinConfirmTarget(null)}
+                      className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-xl font-bold text-xs transition-colors cursor-pointer bg-transparent"
+                    >
+                      Batalkan
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
