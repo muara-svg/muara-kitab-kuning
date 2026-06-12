@@ -2,7 +2,11 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
+      "src": "dist/**/*",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "api/index.ts",
       "use": "@vercel/node"
     }
   ],
@@ -13,7 +17,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/dist/$1"
     }
   ]
 }
