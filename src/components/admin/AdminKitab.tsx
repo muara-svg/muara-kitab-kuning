@@ -18,6 +18,7 @@ import {
   doc, 
   setDoc, 
   getDocs, 
+  onSnapshot,
   deleteDoc, 
   query, 
   orderBy, 
@@ -82,17 +83,15 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
   // Confirmation overlay state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Load categories and kitabs
+  // Load categories and kitabs in real-time
   useEffect(() => {
-    fetchKitabs();
-    fetchCategories();
-  }, [refreshTrigger]);
+    setLoadingKitab(true);
+    let isMounted = true;
 
-  const fetchCategories = async () => {
-    let list: { id: string; name: string; createdAt?: string }[] = [];
-    try {
-      const snap = await getDocs(collection(firestore, 'categories'));
-      snap.forEach(d => {
+    // 1. Subscribe to categories collection
+    const unsubscribeCats = onSnapshot(collection(firestore, 'categories'), (snapshot) => {
+      const list: { id: string; name: string; createdAt?: string }[] = [];
+      snapshot.forEach(d => {
         const data = d.data();
         let createdStr = '';
         if (data.createdAt) {
@@ -106,43 +105,42 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         }
         list.push({ id: d.id, name: data.name || '', createdAt: createdStr });
       });
-    } catch (e) {
-      console.warn('Gagal meresolusi kategori dari Firestore.');
-    }
 
-    // Load local storage custom categories too
-    try {
-      const localCatsStr = localStorage.getItem('muara_custom_categories');
-      if (localCatsStr) {
-        const localCats = JSON.parse(localCatsStr);
-        const existingNames = new Set(list.map(c => c.name.toLowerCase()));
-        localCats.forEach((lc: any) => {
-          if (lc.name && !existingNames.has(lc.name.toLowerCase())) {
-            list.push({ 
-              id: lc.id, 
-              name: lc.name, 
-              createdAt: lc.createdAt || new Date().toISOString() 
-            });
-          }
-        });
+      // Load local storage custom categories too
+      try {
+        const localCatsStr = localStorage.getItem('muara_custom_categories');
+        if (localCatsStr) {
+          const localCats = JSON.parse(localCatsStr);
+          const existingNames = new Set(list.map(c => c.name.toLowerCase()));
+          localCats.forEach((lc: any) => {
+            if (lc.name && !existingNames.has(lc.name.toLowerCase())) {
+              list.push({ 
+                id: lc.id, 
+                name: lc.name, 
+                createdAt: lc.createdAt || new Date().toISOString() 
+              });
+            }
+          });
+        }
+      } catch (localErr) {
+        console.warn('Gagal memuat kategori lokal di AdminKitab:', localErr);
       }
-    } catch (localErr) {
-      console.warn('Gagal memuat kategori lokal di AdminKitab:', localErr);
-    }
 
-    // Sort descending by createdAt
-    list.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+      // Sort descending by createdAt
+      list.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
 
-    setCategories(list);
-  };
+      if (isMounted) {
+        setCategories(list);
+      }
+    }, (e) => {
+      console.warn('Gagal realtime sync kategori:', e);
+    });
 
-  const fetchKitabs = async () => {
-    setLoadingKitab(true);
-    let items: KitabItem[] = [];
-    try {
-      const q = query(collection(firestore, 'kitabs'), orderBy('createdAt', 'desc'));
-      const querySnap = await getDocs(q);
-      querySnap.forEach(docSnap => {
+    // 2. Subscribe to kitabs collection
+    const qKitabs = query(collection(firestore, 'kitabs'), orderBy('createdAt', 'desc'));
+    const unsubscribeKitabs = onSnapshot(qKitabs, (snapshot) => {
+      const items: KitabItem[] = [];
+      snapshot.forEach(docSnap => {
         const d = docSnap.data();
         let createdStr = '';
         if (d.createdAt) {
@@ -169,44 +167,63 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
           createdAt: createdStr
         });
       });
-    } catch (e: any) {
-      console.warn('Gagal memproses muatan kitab dari Firestore:', e);
-    }
 
-    // Load from local storage custom kitabs as well
-    try {
-      const localKitabsStr = localStorage.getItem('muara_custom_kitabs');
-      if (localKitabsStr) {
-        const localKitabs = JSON.parse(localKitabsStr);
-        const existingIds = new Set(items.map(k => k.id));
-        localKitabs.forEach((lk: any) => {
-          if (!existingIds.has(lk.id)) {
-            items.push({
-              id: lk.id,
-              title: lk.title || '',
-              arabicTitle: lk.arabicTitle || '',
-              category: lk.category || '',
-              author: lk.author || '',
-              isPremium: lk.isPremium || false,
-              coverUrl: lk.coverUrl || '',
-              sourceType: lk.sourceType || 'text',
-              pages: lk.pages || [],
-              textBody: lk.textBody || '',
-              jenisKitab: lk.jenisKitab || 'terjemah',
-              createdAt: lk.createdAt || new Date().toISOString()
-            });
-          }
-        });
+      // Load from local storage custom kitabs as well
+      try {
+        const localKitabsStr = localStorage.getItem('muara_custom_kitabs');
+        if (localKitabsStr) {
+          const localKitabs = JSON.parse(localKitabsStr);
+          const existingIds = new Set(items.map(k => k.id));
+          localKitabs.forEach((lk: any) => {
+            if (!existingIds.has(lk.id)) {
+              items.push({
+                id: lk.id,
+                title: lk.title || '',
+                arabicTitle: lk.arabicTitle || '',
+                category: lk.category || '',
+                author: lk.author || '',
+                isPremium: lk.isPremium || false,
+                coverUrl: lk.coverUrl || '',
+                sourceType: lk.sourceType || 'text',
+                pages: lk.pages || [],
+                textBody: lk.textBody || '',
+                jenisKitab: lk.jenisKitab || 'terjemah',
+                createdAt: lk.createdAt || new Date().toISOString()
+              });
+            }
+          });
+        }
+      } catch (localErr) {
+        console.warn('Gagal memuat kitab lokal di AdminKitab:', localErr);
       }
-    } catch (localErr) {
-      console.warn('Gagal memuat kitab lokal di AdminKitab:', localErr);
-    }
 
-    // Sort descending by createdAt
-    items.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+      // Sort descending by createdAt
+      items.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
 
-    setKitabsList(items);
-    setLoadingKitab(false);
+      if (isMounted) {
+        setKitabsList(items);
+        setLoadingKitab(false);
+      }
+    }, (e) => {
+      console.warn('Gagal realtime sync kitab:', e);
+      if (isMounted) {
+        setLoadingKitab(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribeCats();
+      unsubscribeKitabs();
+    };
+  }, [refreshTrigger]);
+
+  const fetchCategories = async () => {
+    // Diperbarui otomatis secara realtime lewat onSnapshot!
+  };
+
+  const fetchKitabs = async () => {
+    // Diperbarui otomatis secara realtime lewat onSnapshot!
   };
 
   // Dynamic asset loader for PDF and Word parsing in-browser

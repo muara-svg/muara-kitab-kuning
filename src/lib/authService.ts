@@ -156,9 +156,14 @@ export async function registerFirebaseUser(
       console.warn('Gagal menempelkan profil meta ke Firebase Auth:', err);
     }
   } catch (err: any) {
-    const errString = String(err?.code || err?.message || err || '');
+    console.error('[MUARA Auth Error Detail]', err);
+    const errString = String(err?.code || err?.message || err || '').toLowerCase();
     if (errString.includes('operation-not-allowed') || errString.includes('not-allowed')) {
-      console.warn('[MUARA Auth Fallback] Email/Password provider isn\'t enabled on Firebase console. Falling back to secure local sandbox.');
+      console.error(
+        `[MUARA Firebase Error] Pendaftaran gagal di Firebase Auth karena Email/Password provider belum diaktifkan di Firebase Console.\n` +
+        `Solusi: Silakan kunjungi Firebase Console Anda -> Build -> Authentication -> Sign-in method, lalu AKTIFKAN pilihan 'Email/Password' (Email dan Kata Sandi).\n` +
+        `Sistem akan menggunakan fallback sandbox lokal untuk pendaftaran ini agar aplikasi tetap berjalan.`
+      );
       firebaseUser = {
         uid: 'user-local-' + Math.random().toString(36).substring(2, 11),
         displayName: userData.name,

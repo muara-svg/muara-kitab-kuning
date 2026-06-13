@@ -26,7 +26,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { KitabKuning, QuranSurah, KamusTerm, HadisItem, UserProfile } from '../types';
 import { MOCK_KITABS, MOCK_SURAHS, MOCK_KAMUS, MOCK_HADISES } from '../data/mockData';
 import { firestore } from '../lib/firebaseConfig';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import KitabReader from './KitabReader';
 
 const getElegantMixBg = (id: string, index: number) => {
@@ -71,34 +71,31 @@ export default function PencarianKategori({
   const [loadingCats, setLoadingCats] = useState(false);
 
   useEffect(() => {
-    const fetchKitabsAndCategories = async () => {
-      setLoadingCats(true);
-      let catList: any[] = [];
-      try {
-        // Fetch custom categories from Firestore
-        const catSnap = await getDocs(collection(firestore, 'categories'));
-        catSnap.forEach(d => {
-          const data = d.data();
-          let createdStr = '';
-          if (data.createdAt) {
-            if (typeof data.createdAt === 'string') {
-              createdStr = data.createdAt;
-            } else if (data.createdAt.toDate) {
-              createdStr = data.createdAt.toDate().toISOString();
-            }
-          } else {
-            createdStr = new Date().toISOString();
+    setLoadingCats(true);
+    let isMounted = true;
+
+    // 1. Listen to Categories collection in real-time
+    const unsubscribeCats = onSnapshot(collection(firestore, 'categories'), (snapshot) => {
+      const catList: any[] = [];
+      snapshot.forEach(d => {
+        const data = d.data();
+        let createdStr = '';
+        if (data.createdAt) {
+          if (typeof data.createdAt === 'string') {
+            createdStr = data.createdAt;
+          } else if (data.createdAt.toDate) {
+            createdStr = data.createdAt.toDate().toISOString();
           }
-          catList.push({
-            id: d.id,
-            name: data.name || '',
-            imageUrl: data.imageUrl || '',
-            createdAt: createdStr
-          });
+        } else {
+          createdStr = new Date().toISOString();
+        }
+        catList.push({
+          id: d.id,
+          name: data.name || '',
+          imageUrl: data.imageUrl || '',
+          createdAt: createdStr
         });
-      } catch (err) {
-        console.warn('Gagal memuat kategori dari Firestore:', err);
-      }
+      });
 
       // Merge with custom categories stored in localStorage
       try {
@@ -118,37 +115,52 @@ export default function PencarianKategori({
 
       // Sort custom categories by createdAt descending so newest is first
       catList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setDynamicCategories(catList);
-      setLoadingCats(false);
-
-      let list: any[] = [];
-      try {
-        // Fetch kitabs from Firestore
-        const snap = await getDocs(collection(firestore, 'kitabs'));
-        snap.forEach(d => {
-          const data = d.data();
-          list.push({
-            id: d.id,
-            title: data.title || '',
-            arabicTitle: data.arabicTitle || '',
-            category: data.category || '',
-            author: data.author || '',
-            description: data.sourceType === 'text'
-              ? `${data.textBody?.substring(0, 115)}...`
-              : `[Visual Halaman] Kitab komplit rujukan visual asli pesantren.`,
-            difficulty: data.isPremium ? 'Tingkat Lanjut' : 'Menengah',
-            isPremium: !!data.isPremium,
-            sourceType: data.sourceType || 'text',
-            pages: data.pages || [],
-            textBody: data.textBody || '',
-            coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=300',
-            jenisKitab: data.jenisKitab || 'terjemah',
-            chapters: []
-          });
-        });
-      } catch (err) {
-        console.warn('Firestore kitabs load bypass:', err);
+      
+      if (isMounted) {
+        setDynamicCategories(catList);
+        setLoadingCats(false);
       }
+    }, (err) => {
+      console.warn('Gagal memuat kategori realtime dari Firestore:', err);
+      let fallbackList: any[] = [];
+      try {
+        const localCatsStr = localStorage.getItem('muara_custom_categories');
+        if (localCatsStr) {
+          fallbackList = JSON.parse(localCatsStr);
+        }
+      } catch (e) {
+        console.warn('Gagal loading local storage fallback:', e);
+      }
+      if (isMounted) {
+        setDynamicCategories(fallbackList);
+        setLoadingCats(false);
+      }
+    });
+
+    // 2. Listen to Kitabs collection in real-time
+    const unsubscribeKitabs = onSnapshot(collection(firestore, 'kitabs'), (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach(d => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          title: data.title || '',
+          arabicTitle: data.arabicTitle || '',
+          category: data.category || '',
+          author: data.author || '',
+          description: data.sourceType === 'text'
+            ? `${data.textBody?.substring(0, 115)}...`
+            : `[Visual Halaman] Kitab komplit rujukan visual asli pesantren.`,
+          difficulty: data.isPremium ? 'Tingkat Lanjut' : 'Menengah',
+          isPremium: !!data.isPremium,
+          sourceType: data.sourceType || 'text',
+          pages: data.pages || [],
+          textBody: data.textBody || '',
+          coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=300',
+          jenisKitab: data.jenisKitab || 'terjemah',
+          chapters: []
+        });
+      });
 
       // Merge with custom kitabs stored in localStorage
       try {
@@ -183,9 +195,30 @@ export default function PencarianKategori({
         console.warn('Gagal memuat kitab lokal di user layout:', localErr);
       }
 
-      setFirestoreKitabs(list);
+      if (isMounted) {
+        setFirestoreKitabs(list);
+      }
+    }, (err) => {
+      console.warn('Gagal memuat kitab realtime dari Firestore:', err);
+      let fallbackList: any[] = [];
+      try {
+        const localKitabsStr = localStorage.getItem('muara_custom_kitabs');
+        if (localKitabsStr) {
+          fallbackList = JSON.parse(localKitabsStr);
+        }
+      } catch (e) {
+        console.warn('Gagal loading local storage fallback:', e);
+      }
+      if (isMounted) {
+        setFirestoreKitabs(fallbackList);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribeCats();
+      unsubscribeKitabs();
     };
-    fetchKitabsAndCategories();
   }, []);
 
   // Selection details state
@@ -229,18 +262,36 @@ export default function PencarianKategori({
     setTimeout(() => setCopiedItem(null), 2000);
   };
 
-  // Merge and resolve premium status for mock kitabs
-  const allKitabsCombined = [
-    ...MOCK_KITABS.map(k => ({
-      ...k,
-      isPremium: k.id === 'kitab-1' || k.difficulty === 'Tingkat Lanjut',
-      jenisKitab: (k as any).jenisKitab || 'terjemah'
-    })),
-    ...firestoreKitabs.map(k => ({
-      ...k,
-      jenisKitab: k.jenisKitab || 'terjemah'
-    }))
-  ];
+  // Merge and resolve premium status for mock kitabs and deduplicate by id
+  const allKitabsCombined = (() => {
+    const list: any[] = [];
+    const seenIds = new Set<string>();
+
+    MOCK_KITABS.forEach(k => {
+      const item = {
+        ...k,
+        isPremium: k.id === 'kitab-1' || k.difficulty === 'Tingkat Lanjut',
+        jenisKitab: (k as any).jenisKitab || 'terjemah'
+      };
+      if (item.id && !seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        list.push(item);
+      }
+    });
+
+    firestoreKitabs.forEach(k => {
+      const item = {
+        ...k,
+        jenisKitab: k.jenisKitab || 'terjemah'
+      };
+      if (item.id && !seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        list.push(item);
+      }
+    });
+
+    return list;
+  })();
 
   // Event subscriber to handle instant navigation requests from Santri AI
   useEffect(() => {

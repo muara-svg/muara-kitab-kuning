@@ -16,6 +16,7 @@ import {
   doc, 
   setDoc, 
   getDocs, 
+  onSnapshot,
   deleteDoc, 
   query, 
   orderBy, 
@@ -58,13 +59,14 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isEditingId, setIsEditingId] = useState<string | null>(null);
 
-  const fetchCategories = async () => {
+  useEffect(() => {
     setLoadingCat(true);
-    let items: CategoryItem[] = [];
-    try {
-      const q = query(collection(firestore, 'categories'), orderBy('createdAt', 'desc'));
-      const catSnap = await getDocs(q);
-      catSnap.forEach(docSnap => {
+    let isMounted = true;
+
+    const q = query(collection(firestore, 'categories'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items: CategoryItem[] = [];
+      snapshot.forEach(docSnap => {
         const d = docSnap.data();
         let createdStr = '';
         if (d.createdAt) {
@@ -83,35 +85,56 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
           createdAt: createdStr
         });
       });
-    } catch (e: any) {
-      console.warn('Gagal mengambil daftar kategori dari Firestore:', e);
-    }
 
-    // Load local storage custom categories too
-    try {
-      const localCatsStr = localStorage.getItem('muara_custom_categories');
-      if (localCatsStr) {
-        const localCats = JSON.parse(localCatsStr);
-        const existingIds = new Set(items.map(c => c.id));
-        localCats.forEach((lc: any) => {
-          if (!existingIds.has(lc.id)) {
-            items.push(lc);
-          }
-        });
+      // Load local storage custom categories too
+      try {
+        const localCatsStr = localStorage.getItem('muara_custom_categories');
+        if (localCatsStr) {
+          const localCats = JSON.parse(localCatsStr);
+          const existingIds = new Set(items.map(c => c.id));
+          localCats.forEach((lc: any) => {
+            if (!existingIds.has(lc.id)) {
+              items.push(lc);
+            }
+          });
+        }
+      } catch (localErr) {
+        console.warn('Gagal memuat kategori lokal:', localErr);
       }
-    } catch (localErr) {
-      console.warn('Gagal memuat kategori lokal:', localErr);
-    }
 
-    // Sort descending by createdAt
-    items.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
-    setCategoriesList(items);
-    setLoadingCat(false);
-  };
+      // Sort descending by createdAt
+      items.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+      
+      if (isMounted) {
+        setCategoriesList(items);
+        setLoadingCat(false);
+      }
+    }, (error) => {
+      console.warn('Gagal realtime sync kategori:', error);
+      let fallbackItems: CategoryItem[] = [];
+      try {
+        const localCatsStr = localStorage.getItem('muara_custom_categories');
+        if (localCatsStr) {
+          fallbackItems = JSON.parse(localCatsStr);
+        }
+      } catch (e) {
+        console.warn('Gagal load localStorage fallback:', e);
+      }
+      if (isMounted) {
+        setCategoriesList(fallbackItems);
+        setLoadingCat(false);
+      }
+    });
 
-  useEffect(() => {
-    fetchCategories();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [refreshTrigger]);
+
+  const fetchCategories = async () => {
+    // Real-time synchronization is handled automatically by onSnapshot!
+  };
 
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
