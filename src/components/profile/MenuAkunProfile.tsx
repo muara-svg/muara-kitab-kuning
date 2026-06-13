@@ -147,7 +147,7 @@ export default function MenuAkunProfile({
         createdAt: currentUser.createdAt || new Date().toISOString(),
       };
 
-      await saveUserToFirestore(updatedUser);
+      await saveUserToFirestore(updatedUser, true);
       onUpdateSuccess(updatedUser);
       setSuccessMsg('✓ Profil Anda berhasil diperbarui dengan sukses!');
       

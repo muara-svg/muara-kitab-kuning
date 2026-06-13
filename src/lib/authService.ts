@@ -159,20 +159,12 @@ export async function registerFirebaseUser(
     console.error('[MUARA Auth Error Detail]', err);
     const errString = String(err?.code || err?.message || err || '').toLowerCase();
     if (errString.includes('operation-not-allowed') || errString.includes('not-allowed')) {
-      console.error(
-        `[MUARA Firebase Error] Pendaftaran gagal di Firebase Auth karena Email/Password provider belum diaktifkan di Firebase Console.\n` +
-        `Solusi: Silakan kunjungi Firebase Console Anda -> Build -> Authentication -> Sign-in method, lalu AKTIFKAN pilihan 'Email/Password' (Email dan Kata Sandi).\n` +
-        `Sistem akan menggunakan fallback sandbox lokal untuk pendaftaran ini agar aplikasi tetap berjalan.`
+      throw new Error(
+        'Pendaftaran gagal karena metode masuk Email/Password belum AKTIF di Firebase Console Anda.\n' +
+        'Solusi: Silakan buka Firebase Console -> Build -> Authentication -> Sign-in method, lalu aktifkan opsi "Email/Password".'
       );
-      firebaseUser = {
-        uid: 'user-local-' + Math.random().toString(36).substring(2, 11),
-        displayName: userData.name,
-        email: userData.email,
-        photoURL: userData.avatarUrl
-      };
-    } else {
-      throw err;
     }
+    throw err;
   }
 
   // 3. Masukkan data profil lengkap ke skema terstruktur
@@ -182,8 +174,8 @@ export async function registerFirebaseUser(
     password: password // Simpan password untuk validasi cadangan virtual
   };
 
-  // 4. Sinkronisasikan data profil ke Cloud Firestore 'users'
-  await saveUserToFirestore(completedUser);
+  // 4. Sinkronisasikan data profil ke Cloud Firestore 'users' dengan throwOnFailure = true
+  await saveUserToFirestore(completedUser, true);
 
   return completedUser;
 }
@@ -400,7 +392,7 @@ export async function loginFirebaseUser(email: string, password: string): Promis
 }
 
 // 5. User Registry Database Wrapper (saves locally + seeks Firestore matches)
-export async function saveUserToFirestore(userData: UserSchema): Promise<void> {
+export async function saveUserToFirestore(userData: UserSchema, throwOnFailure: boolean = false): Promise<void> {
   // A. Save to localStorage sandbox
   const users = getStoredUsers();
   users[userData.email.toLowerCase()] = userData;
@@ -435,7 +427,10 @@ export async function saveUserToFirestore(userData: UserSchema): Promise<void> {
       await setDoc(userRef, writeData);
       console.log('User saved to Firestore users collection successfully.');
     } catch (err) {
-      console.warn('Firestore saving bypassed or offline (relying on active local sandboxes):', err);
+      console.error('Firestore saving failed:', err);
+      if (throwOnFailure) {
+        throw err;
+      }
     }
   }
 }
