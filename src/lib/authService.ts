@@ -174,8 +174,14 @@ export async function registerFirebaseUser(
     password: password // Simpan password untuk validasi cadangan virtual
   };
 
-  // 4. Sinkronisasikan data profil ke Cloud Firestore 'users' dengan throwOnFailure = true
-  await saveUserToFirestore(completedUser, true);
+  // 4. Sinkronisasikan data profil ke Cloud Firestore 'users' dengan throwOnFailure = true, tetapi robust fallback agar tidak menggagalkan pendaftaran jika terjadi limit/blok jaringan lokal
+  try {
+    await saveUserToFirestore(completedUser, true);
+  } catch (fsErr: any) {
+    console.warn('[MUARA Reg Resiliensi] Masalah saat menulis ke Firestore cloud langsung, menyimpan ke sandbox lokal:', fsErr);
+    // Jalankan fallback local write (tidak throwOnFailure) agar pengguna tidak stuck saat mendaftar
+    await saveUserToFirestore(completedUser, false);
+  }
 
   return completedUser;
 }

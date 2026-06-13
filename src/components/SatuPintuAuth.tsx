@@ -49,18 +49,22 @@ import BeriRating from './profile/BeriRating';
 const getFriendlyErrorMessage = (err: any, fallbackMessage: string): string => {
   const errText = String(err?.code || err?.message || err || '').toLowerCase();
   console.error('[AUTH ERROR DEBUG]', err);
-  const isNetworkError = 
-    !navigator.onLine ||
-    err?.code === 'auth/network-request-failed' ||
-    errText.includes('network') ||
-    errText.includes('offline') ||
-    errText.includes('fetch failed') ||
-    errText.includes('network-request-failed') ||
-    errText.includes('unavailable');
-
-  if (isNetworkError) {
+  
+  // Deteksi jika pengguna BENAR-BENAR offline (tanpa kuota / internet mati)
+  const isTrulyOffline = !navigator.onLine;
+  if (isTrulyOffline) {
     return 'bro miskin ya,beli paketnya dulu dong baru lanjutkan,,!!';
   }
+
+  // Jika koneksi mengalami kegagalan teknis or general network error lainnya
+  const isNetworkFailure = 
+    err?.code === 'auth/network-request-failed' ||
+    errText.includes('network-request-failed');
+
+  if (isNetworkFailure) {
+    return 'Koneksi internet bermasalah atau terputus. Silakan coba beberapa saat lagi.';
+  }
+
   return fallbackMessage;
 };
 
@@ -306,11 +310,7 @@ export default function SatuPintuAuth({
     setRegError('');
     setRegSuccess(false);
 
-    // 1. Full validations
-    if (!regPhotoUrl) {
-      setRegError('Silakan unggah foto profil Anda terlebih dahulu.');
-      return;
-    }
+    // 1. Full validations (Profile Photo is now optional!)
     if (!regName.trim()) {
       setRegError('Nama Lengkap tidak boleh kosong.');
       return;
@@ -346,13 +346,16 @@ export default function SatuPintuAuth({
       return;
     }
 
+    // Generate beautiful default initials avatar if user did not upload any image
+    const finalAvatarUrl = regPhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(regName.trim())}&background=0D9488&color=fff&size=128&bold=true`;
+
     // Save user profile details
     const pendingUser: Omit<UserSchema, 'uid'> = {
       name: regName.trim(),
       email: emailClean,
       phone: regPhone.trim(),
       bio: regBio.trim(),
-      avatarUrl: regPhotoUrl,
+      avatarUrl: finalAvatarUrl,
       role: 'user', // Default is strictly user (anti-escalation)
       isPremium: false, // Default state
       createdAt: new Date().toISOString(),
@@ -812,7 +815,9 @@ export default function SatuPintuAuth({
 
                 {/* FILE 1: PROFILE PHOTO UPLOADER (DRAG & DROP + CLICK) */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">Foto Profil Anda</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Foto Profil Anda <span className="text-[10px] font-normal text-slate-400 font-sans">(Opsional - default icon di-generate otomatis)</span>
+                  </label>
                   
                   <div 
                     onDragOver={handleDragOver}
