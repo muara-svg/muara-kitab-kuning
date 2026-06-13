@@ -132,6 +132,15 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "name", "email", "password", "createdAt"]
+    },
+    "Config": {
+      "title": "Config",
+      "description": "Konfigurasi kustom aplikasi MUARA (seperti paket membership atau metode pembayaran)",
+      "type": "object",
+      "properties": {
+        "plans": { "type": "array" },
+        "methods": { "type": "array" }
+      }
     }
   },
   "firestore": {
@@ -166,6 +175,10 @@
     "/local_auth_fallbacks/{email}": {
       "schema": "LocalAuthFallback",
       "description": "Login cadangan database terenkripsi ketika pendaftaran klien di Firebase Auth dinonaktifkan"
+    },
+    "/configs/{configId}": {
+      "schema": "Config",
+      "description": "Dokumen konfigurasi kustom aplikasi seperti list membership dan metode pembayaran"
     }
   }
 }
