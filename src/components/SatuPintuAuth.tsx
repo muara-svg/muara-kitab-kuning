@@ -48,16 +48,18 @@ import BeriRating from './profile/BeriRating';
 
 const getFriendlyErrorMessage = (err: any, fallbackMessage: string): string => {
   const errText = String(err?.code || err?.message || err || '').toLowerCase();
-  if (
+  console.error('[AUTH ERROR DEBUG]', err);
+  const isNetworkError = 
     !navigator.onLine ||
     err?.code === 'auth/network-request-failed' ||
-    errText.includes('firebase') ||
     errText.includes('network') ||
     errText.includes('offline') ||
     errText.includes('fetch failed') ||
-    errText.includes('network-request-failed')
-  ) {
-    return 'bro miskin ya,modal dikit dong bro,beli paketnya dulu baru lanjutkan,,!!';
+    errText.includes('network-request-failed') ||
+    errText.includes('unavailable');
+
+  if (isNetworkError) {
+    return 'bro miskin ya,beli paketnya dulu dong baru lanjutkan,,!!';
   }
   return fallbackMessage;
 };
