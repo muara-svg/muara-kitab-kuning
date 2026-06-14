@@ -101,9 +101,9 @@ Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussa
         parts: [{ text: prompt }]
       });
 
-      // Generate response using gemini-3.5-flash as the recommended model
+      // Menggunakan tipe model yang valid dan stabil dari Google AI Studio ('gemini-2.5-flash')
       const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: contentsParts,
         config: {
           systemInstruction: systemInstruction,
@@ -116,12 +116,14 @@ Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussa
     } catch (err: any) {
       console.error("[Santri AI Server Error]:", err);
       const errMsg = err.message || "";
+      
+      // Mengamankan respon fallback JSON agar tidak crash meledak di frontend pembaca
       if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
         return res.status(503).json({ 
           error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
         });
       }
-      res.status(500).json({ error: errMsg || "Gagal berkomunikasi dengan Santri AI" });
+      res.status(500).json({ error: "Gagal berkomunikasi dengan Santri AI. Pastikan GEMINI_API_KEY Anda sudah benar." });
     }
   });
 
