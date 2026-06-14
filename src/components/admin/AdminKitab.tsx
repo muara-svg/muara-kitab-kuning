@@ -7,17 +7,14 @@ import {
   Image as ImageIcon, 
   Loader2, 
   CheckCircle,
-  Clock,
-  Sparkles,
-  FileText
+  Sparkles
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { firestore } from '../../lib/firebaseConfig';
 import { 
   collection, 
   doc, 
   setDoc, 
-  getDocs, 
   onSnapshot,
   deleteDoc, 
   query, 
@@ -72,23 +69,20 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
   // Attachments
   const [kitabCoverFile, setKitabCoverFile] = useState<File | null>(null);
   const [kitabCoverPreview, setKitabCoverPreview] = useState('');
-  const [kitabPdfFile, setKitabPdfFile] = useState<File | null>(null);
-  const [kitabPdfFileName, setKitabPdfFileName] = useState('');
 
   // Splicer indicators
   const [pdfProcessingStatus, setPdfProcessingStatus] = useState<string>('');
-  const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfUploadPercentage, setPdfUploadPercentage] = useState(0);
 
   // Confirmation overlay state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Load categories and kitabs in real-time
+  // Memuat data kategori dan kitab secara realtime melalui Cloud Firestore Cache Pipeline
   useEffect(() => {
     setLoadingKitab(true);
     let isMounted = true;
 
-    // 1. Subscribe to categories collection
+    // 1. Subscribe Realtime ke Koleksi Categories Cloud
     const unsubscribeCats = onSnapshot(collection(firestore, 'categories'), (snapshot) => {
       const list: { id: string; name: string; createdAt?: string }[] = [];
       snapshot.forEach(d => {
@@ -106,37 +100,16 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         list.push({ id: d.id, name: data.name || '', createdAt: createdStr });
       });
 
-      // Load local storage custom categories too
-      try {
-        const localCatsStr = localStorage.getItem('muara_custom_categories');
-        if (localCatsStr) {
-          const localCats = JSON.parse(localCatsStr);
-          const existingNames = new Set(list.map(c => c.name.toLowerCase()));
-          localCats.forEach((lc: any) => {
-            if (lc.name && !existingNames.has(lc.name.toLowerCase())) {
-              list.push({ 
-                id: lc.id, 
-                name: lc.name, 
-                createdAt: lc.createdAt || new Date().toISOString() 
-              });
-            }
-          });
-        }
-      } catch (localErr) {
-        console.warn('Gagal memuat kategori lokal di AdminKitab:', localErr);
-      }
-
-      // Sort descending by createdAt
       list.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
 
       if (isMounted) {
         setCategories(list);
       }
     }, (e) => {
-      console.warn('Gagal realtime sync kategori:', e);
+      console.error('Gagal realtime sync kategori di AdminKitab:', e);
     });
 
-    // 2. Subscribe to kitabs collection
+    // 2. Subscribe Realtime ke Koleksi Kitabs Cloud (Memicu download background otomatis untuk user offline)
     const qKitabs = query(collection(firestore, 'kitabs'), orderBy('createdAt', 'desc'));
     const unsubscribeKitabs = onSnapshot(qKitabs, (snapshot) => {
       const items: KitabItem[] = [];
@@ -168,36 +141,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         });
       });
 
-      // Load from local storage custom kitabs as well
-      try {
-        const localKitabsStr = localStorage.getItem('muara_custom_kitabs');
-        if (localKitabsStr) {
-          const localKitabs = JSON.parse(localKitabsStr);
-          const existingIds = new Set(items.map(k => k.id));
-          localKitabs.forEach((lk: any) => {
-            if (!existingIds.has(lk.id)) {
-              items.push({
-                id: lk.id,
-                title: lk.title || '',
-                arabicTitle: lk.arabicTitle || '',
-                category: lk.category || '',
-                author: lk.author || '',
-                isPremium: lk.isPremium || false,
-                coverUrl: lk.coverUrl || '',
-                sourceType: lk.sourceType || 'text',
-                pages: lk.pages || [],
-                textBody: lk.textBody || '',
-                jenisKitab: lk.jenisKitab || 'terjemah',
-                createdAt: lk.createdAt || new Date().toISOString()
-              });
-            }
-          });
-        }
-      } catch (localErr) {
-        console.warn('Gagal memuat kitab lokal di AdminKitab:', localErr);
-      }
-
-      // Sort descending by createdAt
       items.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
 
       if (isMounted) {
@@ -205,7 +148,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         setLoadingKitab(false);
       }
     }, (e) => {
-      console.warn('Gagal realtime sync kitab:', e);
+      console.error('Gagal realtime sync repo kitab:', e);
       if (isMounted) {
         setLoadingKitab(false);
       }
@@ -217,14 +160,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       unsubscribeKitabs();
     };
   }, [refreshTrigger]);
-
-  const fetchCategories = async () => {
-    // Diperbarui otomatis secara realtime lewat onSnapshot!
-  };
-
-  const fetchKitabs = async () => {
-    // Diperbarui otomatis secara realtime lewat onSnapshot!
-  };
 
   // Dynamic asset loader for PDF and Word parsing in-browser
   const loadPdfJs = (): Promise<any> => {
@@ -241,9 +176,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         resolve(pdfjsLib);
       };
-      script.onerror = () => {
-        reject(new Error('Gagal memuat pustaka parser PDF dari CDN.'));
-      };
+      script.onerror = () => reject(new Error('Gagal memuat pustaka parser PDF dari CDN.'));
       document.head.appendChild(script);
     });
   };
@@ -257,18 +190,13 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
       script.async = true;
-      script.onload = () => {
-        resolve((window as any).mammoth);
-      };
-      script.onerror = () => {
-        reject(new Error('Gagal memuat pustaka parser Word (Mammoth.js) dari CDN.'));
-      };
+      script.onload = () => resolve((window as any).mammoth);
+      script.onerror = () => reject(new Error('Gagal memuat pustaka parser Word (Mammoth.js) dari CDN.'));
       document.head.appendChild(script);
     });
   };
 
-  // Helper function to compress image covers to a tiny JPEG client-side
-  const compressImage = (file: File, maxWidth = 300, quality = 0.6): Promise<File> => {
+  const compressImageLocal = (file: File, maxWidth = 300, quality = 0.6): Promise<File> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -311,7 +239,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     });
   };
 
-  // Extract plain text from PDF pages
   const parsePdfToText = async (file: File): Promise<string> => {
     setPdfProcessingStatus('Memuat mesin pembaca teks PDF...');
     const pdfjsLib = await loadPdfJs();
@@ -320,7 +247,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     setPdfProcessingStatus('Membaca katalog fisik PDF...');
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const totalPages = pdf.numPages;
-    setPdfPageCount(totalPages);
     
     let compiledText = '';
     
@@ -339,7 +265,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     return compiledText.trim();
   };
 
-  // Extract plain text from Word (.docx) documents
   const parseDocxToText = async (file: File): Promise<string> => {
     setPdfProcessingStatus('Memuat mesin pembaca berkas Word...');
     const mammoth = await loadMammothJs();
@@ -352,7 +277,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     return result.value.trim();
   };
 
-  // Handler for file change (PDF or Docx) under "Opsi Sumber Data Kitab"
   const handleFileChangeForTextConversion = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -417,7 +341,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     try {
       if (kitabCoverFile) {
         setPdfProcessingStatus('Mengompresi gambar sampul s/d < 50KB...');
-        const compressedFile = await compressImage(kitabCoverFile);
+        const compressedFile = await compressImageLocal(kitabCoverFile);
         
         setPdfProcessingStatus('Mengunggah berkas sampul kitab ke Cloudinary...');
         finalCoverUrl = await uploadToCloudinaryDirect(compressedFile, {
@@ -443,41 +367,8 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         createdAt: isEditingKitabId ? serverTimestamp() : new Date().toISOString()
       };
 
-      // 1. Dual Write: Cloud Firestore
-      try {
-        await setDoc(docRef, payload, { merge: true });
-      } catch (dbErr: any) {
-        console.warn('Simpan ke Firestore ditolak/gagal, memfungsikan Local Fallback:', dbErr);
-      }
-
-      // 2. Dual Write: Local Storage Fallback
-      try {
-        const localKitabsStr = localStorage.getItem('muara_custom_kitabs') || '[]';
-        const localKitabs = JSON.parse(localKitabsStr);
-        const existingIdx = localKitabs.findIndex((lk: any) => lk.id === targetId);
-        const localPayload = {
-          id: targetId,
-          title: payload.title,
-          arabicTitle: payload.arabicTitle,
-          category: payload.category,
-          author: payload.author,
-          isPremium: payload.isPremium,
-          coverUrl: payload.coverUrl,
-          sourceType: payload.sourceType,
-          pages: payload.pages,
-          textBody: payload.textBody,
-          jenisKitab: kitabJenis,
-          createdAt: isEditingKitabId ? (typeof payload.createdAt === 'string' ? payload.createdAt : new Date().toISOString()) : payload.createdAt
-        };
-        if (existingIdx > -1) {
-          localKitabs[existingIdx] = localPayload;
-        } else {
-          localKitabs.push(localPayload);
-        }
-        localStorage.setItem('muara_custom_kitabs', JSON.stringify(localKitabs));
-      } catch (localErr) {
-        console.warn('Gagal cadangkan kitab ke localStorage:', localErr);
-      }
+      // Murni dilempar ke Cloud Firestore, Sinkronisasi cache offline ditangani penuh oleh SDK Firebase Auth & Database
+      await setDoc(docRef, payload, { merge: true });
 
       onSuccess(isEditingKitabId ? 'Metadata Kitab berhasil dikoreksi.' : 'Kitab baru sukses didaftarkan.');
       
@@ -492,12 +383,9 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       setKitabJenis('terjemah');
       setKitabCoverFile(null);
       setKitabCoverPreview('');
-      setKitabPdfFile(null);
-      setKitabPdfFileName('');
       setIsEditingKitabId(null);
       setIsKitabModalOpen(false);
 
-      await fetchKitabs();
     } catch (err: any) {
       console.error(err);
       onError(`Kendala saat menyimpan kitab: ${err.message}`);
@@ -507,20 +395,17 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     }
   };
 
-  const handleInitiateEditKitab = (kitab: KitabItem) => {
+  const handleInitializeEditKitab = (kitab: KitabItem) => {
     setIsEditingKitabId(kitab.id);
     setKitabTitle(kitab.title);
     setKitabArabicTitle(kitab.arabicTitle || '');
     setKitabCategory(kitab.category);
     setKitabAuthor(kitab.author);
     setKitabIsPremium(kitab.isPremium);
-    // Since everything is now read back as text-based content, map properly
     setKitabSourceType('text');
     setKitabTextBody(kitab.textBody || (kitab.pages ? kitab.pages.join('\n\n') : ''));
     setKitabCoverPreview(kitab.coverUrl || '');
     setKitabCoverFile(null);
-    setKitabPdfFile(null);
-    setKitabPdfFileName('');
     setKitabJenis(kitab.jenisKitab || 'terjemah');
     setPdfUploadPercentage(0);
     setPdfProcessingStatus('');
@@ -538,27 +423,16 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     setDeleteConfirmId(null);
     setDeleteConfirmTitle('');
     setLoadingSubmit(true);
+    
     try {
       await deleteDoc(doc(firestore, 'kitabs', targetId));
+      onSuccess('Kitab berhasil dihapus dari repositori.');
     } catch (err: any) {
-      console.warn('Gagal menghapus dari Firestore:', err);
+      console.error('Gagal menghapus kitab dari Firestore cloud:', err);
+      onError(`Gagal menghapus dokumen kitab: ${err.message}`);
+    } finally {
+      setLoadingSubmit(false);
     }
-
-    // Always delete from localStorage
-    try {
-      const localKitabsStr = localStorage.getItem('muara_custom_kitabs');
-      if (localKitabsStr) {
-        let localKitabs = JSON.parse(localKitabsStr);
-        localKitabs = localKitabs.filter((lk: any) => lk.id !== targetId);
-        localStorage.setItem('muara_custom_kitabs', JSON.stringify(localKitabs));
-      }
-    } catch (localErr) {
-      console.warn('Gagal menghapus dari local storage:', localErr);
-    }
-
-    onSuccess('Kitab berhasil dihapus dari repositori.');
-    await fetchKitabs();
-    setLoadingSubmit(false);
   };
 
   return (
@@ -585,8 +459,6 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
             setKitabJenis('terjemah');
             setKitabCoverFile(null);
             setKitabCoverPreview('');
-            setKitabPdfFile(null);
-            setKitabPdfFileName('');
             setPdfUploadPercentage(0);
             setPdfProcessingStatus('');
             setIsKitabModalOpen(true);
@@ -636,7 +508,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                   </td>
                   <td className="p-3">
                     <p className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                      {item.title} <span className="text-slate-400 font-normal">({item.arabicTitle})</span>
+                      {item.title} {item.arabicTitle && <span className="text-slate-400 font-normal">({item.arabicTitle})</span>}
                     </p>
                     <p className="text-[10px] text-slate-450 mt-0.5">Oleh: {item.author}</p>
                   </td>
@@ -660,14 +532,14 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                   <td className="p-3">
                     <div className="flex items-center justify-center gap-2">
                       <button
-                        onClick={() => handleInitiateEditKitab(item)}
-                        className="p-1 px-2.5 rounded-lg border border-slate-200 text-slate-650 hover:text-[#064e3b] hover:bg-emerald-50 transition-colors flex items-center gap-0.5"
+                        onClick={() => handleInitializeEditKitab(item)}
+                        className="p-1 px-2.5 rounded-lg border border-slate-200 text-slate-650 hover:text-[#064e3b] hover:bg-emerald-50 transition-colors flex items-center gap-0.5 cursor-pointer"
                       >
                         <Edit2 className="h-3 w-3" /> <span className="text-[10px] font-bold">Edit</span>
                       </button>
                       <button
                         onClick={() => initiateDeleteKitab(item.id, item.title)}
-                        className="p-1 px-2.5 rounded-lg border border-red-100 text-red-650 hover:bg-red-50 transition-colors flex items-center gap-0.5"
+                        className="p-1 px-2.5 rounded-lg border border-red-100 text-red-650 hover:bg-red-50 transition-colors flex items-center gap-0.5 cursor-pointer"
                       >
                         <Trash2 className="h-3 w-3" /> <span className="text-[10px] font-bold">Hapus</span>
                       </button>
@@ -692,7 +564,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
               </h4>
               <button
                 onClick={() => setIsKitabModalOpen(false)}
-                className="text-white hover:text-emerald-350 text-xs font-mono font-bold font-sans"
+                className="text-white hover:text-emerald-350 text-xs font-mono font-bold font-sans cursor-pointer"
               >
                 [ Tutup ]
               </button>
@@ -799,7 +671,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                 </div>
               </div>
 
-              {/* COVER COVER SECTION */}
+              {/* COVER SECTION */}
               <div className="space-y-1">
                 <label className="block font-bold text-slate-700 uppercase text-[9px] font-mono">7. Sampul Rekomendasi (Gambar)</label>
                 <div className="flex items-center gap-4">
@@ -862,7 +734,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
 
               {/* PROCESS STATUS SPLITTING PDF */}
               {pdfProcessingStatus && (
-                <div className="p-3 bg-[#064e3b]/5 text-[#064e3b] rounded-xl border border-emerald-100 font-mono text-[10px] space-y-1">
+                <div className="p-3 bg-slate-100 text-[#064e3b] rounded-xl border border-emerald-100 font-mono text-[10px] space-y-1">
                   <div className="flex items-center gap-1.5">
                     <Loader2 className="h-3 w-3 animate-spin text-emerald-600" />
                     <span className="font-bold uppercase">Proses Pemecahan PDF:</span>
@@ -891,85 +763,93 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       )}
 
       {/* DIALOG KONFIRMASI KUSTOM SEBELUM MENYIMPAN */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-205 w-full max-w-sm overflow-hidden shadow-2xl p-6 space-y-4 text-center font-sans">
-            <div className="mx-auto h-12 w-12 rounded-full bg-emerald-50 border border-emerald-250 flex items-center justify-center text-emerald-600 shadow-inner">
-              <BookOpen className="h-6 w-6" />
-            </div>
-            
-            <div className="space-y-1">
-              <h4 className="font-extrabold text-slate-800 text-sm">Konfirmasi Penyimpanan</h4>
-              <p className="text-[11px] text-slate-505 leading-relaxed">
-                Apakah Anda benar-benar yakin ingin mendaftarkan atau merubah data kitab <strong>"{kitabTitle}"</strong> ini ke cloud database?
-              </p>
-            </div>
+      <AnimatePresence>
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-slate-205 w-full max-w-sm overflow-hidden shadow-2xl p-6 space-y-4 text-center font-sans">
+              <div className="mx-auto h-12 w-12 rounded-full bg-emerald-50 border border-emerald-250 flex items-center justify-center text-emerald-600 shadow-inner">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-slate-800 text-sm">Konfirmasi Penyimpanan</h4>
+                <p className="text-[11px] text-slate-505 leading-relaxed">
+                  Apakah Anda benar-benar yakin ingin mendaftarkan atau merubah data kitab <strong>"{kitabTitle}"</strong> ini ke cloud database?
+                </p>
+              </div>
 
-            <div className="p-3 bg-slate-50/80 rounded-xl text-left border border-slate-150 text-[10px] space-y-1 text-slate-650 font-mono">
-              <p>• <strong>Judul:</strong> {kitabTitle} ({kitabArabicTitle || 'Tidak ada'})</p>
-              <p>• <strong>Kategori:</strong> {kitabCategory}</p>
-              <p>• <strong>Jenis:</strong> {kitabJenis.toUpperCase()}</p>
-              <p>• <strong>Akses:</strong> {kitabIsPremium ? '💎 Premium VIP' : '🆓 Gratis Umum'}</p>
-              <p>• <strong>Karakter Teks:</strong> {kitabTextBody.length.toLocaleString()} karakter (~{kitabTextBody.split(/\s+/).length} kata)</p>
-            </div>
+              <div className="p-3 bg-slate-50/80 rounded-xl text-left border border-slate-150 text-[10px] space-y-1 text-slate-650 font-mono">
+                <p>• <strong>Judul:</strong> {kitabTitle} {kitabArabicTitle ? `(${kitabArabicTitle})` : ''}</p>
+                <p>• <strong>Kategori:</strong> {kitabCategory}</p>
+                <p>• <strong>Jenis:</strong> {kitabJenis.toUpperCase()}</p>
+                <p>• <strong>Akses:</strong> {kitabIsPremium ? '💎 Premium VIP' : '🆓 Gratis Umum'}</p>
+                <p>• <strong>Karakter Teks:</strong> {kitabTextBody.length.toLocaleString()} karakter (~{kitabTextBody.split(/\s+/).length} kata)</p>
+              </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="flex-1 py-2 rounded-xl border border-slate-250 hover:bg-slate-100 text-slate-600 font-bold text-xs cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={executeSaveKitab}
-                className="flex-1 py-2 rounded-xl bg-[#064e3b] hover:bg-emerald-800 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
-              >
-                Ya, Simpan
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={loadingSubmit}
+                  onClick={() => setShowConfirmModal(false)}
+                  className="flex-1 py-2 rounded-xl border border-slate-250 hover:bg-slate-100 text-slate-600 font-bold text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={loadingSubmit}
+                  onClick={executeSaveKitab}
+                  className="flex-1 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1"
+                >
+                  {loadingSubmit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Ya, Simpan'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* DIALOG KONFIRMASI KUSTOM UNTUK MENGHAPUS KITAB */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-205 w-full max-w-sm overflow-hidden shadow-2xl p-6 space-y-4 text-center font-sans">
-            <div className="mx-auto h-12 w-12 rounded-full bg-red-50 border border-red-200 flex items-center justify-center text-red-650 shadow-inner animate-pulse">
-              <Trash2 className="h-6 w-6" />
-            </div>
-            
-            <div className="space-y-1">
-              <h4 className="font-extrabold text-slate-800 text-sm">Konfirmasi Menghapus</h4>
-              <p className="text-[11px] text-slate-505 leading-relaxed">
-                Apakah Anda benar-benar yakin ingin menghapus kitab <strong>"{deleteConfirmTitle}"</strong> secara permanen dari Cloud database dan local storage? Tindakan ini tidak dapat dibatalkan.
-              </p>
-            </div>
+      <AnimatePresence>
+        {deleteConfirmId && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-slate-205 w-full max-w-sm overflow-hidden shadow-2xl p-6 space-y-4 text-center font-sans">
+              <div className="mx-auto h-12 w-12 rounded-full bg-red-50 border border-red-200 flex items-center justify-center text-red-650 shadow-inner">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-slate-800 text-sm">Konfirmasi Menghapus</h4>
+                <p className="text-[11px] text-slate-505 leading-relaxed">
+                  Apakah Anda benar-benar yakin ingin menghapus kitab <strong>"{deleteConfirmTitle}"</strong> secara permanen dari Cloud database dan local storage? Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteConfirmId(null);
-                  setDeleteConfirmTitle('');
-                }}
-                className="flex-1 py-2 rounded-xl border border-slate-250 hover:bg-slate-100 text-slate-650 font-bold text-xs cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={executeDeleteKitab}
-                className="flex-1 py-2 rounded-xl bg-red-650 hover:bg-red-750 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
-              >
-                Ya, Hapus Permanen
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={loadingSubmit}
+                  onClick={() => {
+                    setDeleteConfirmId(null);
+                    setDeleteConfirmTitle('');
+                  }}
+                  className="flex-1 py-2 rounded-xl border border-slate-250 hover:bg-slate-100 text-slate-650 font-bold text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={loadingSubmit}
+                  onClick={executeDeleteKitab}
+                  className="flex-1 py-2 rounded-xl bg-red-650 hover:bg-red-750 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
+                >
+                  {loadingSubmit ? 'Menghapus...' : 'Ya, Hapus'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
     </motion.div>
   );

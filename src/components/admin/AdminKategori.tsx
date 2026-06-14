@@ -15,12 +15,10 @@ import {
   collection, 
   doc, 
   setDoc, 
-  getDocs, 
   onSnapshot,
   deleteDoc, 
   query, 
-  orderBy, 
-  serverTimestamp 
+  orderBy 
 } from 'firebase/firestore';
 import { uploadToCloudinaryDirect } from '../../lib/cloudinaryConfig';
 import { compressImage } from '../../lib/authService';
@@ -63,6 +61,7 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
     setLoadingCat(true);
     let isMounted = true;
 
+    // Sinkronisasi Realtime murni lewat onSnapshot Cloud Firestore (Otomatis Prefetching ke localCache)
     const q = query(collection(firestore, 'categories'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const items: CategoryItem[] = [];
@@ -86,23 +85,7 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
         });
       });
 
-      // Load local storage custom categories too
-      try {
-        const localCatsStr = localStorage.getItem('muara_custom_categories');
-        if (localCatsStr) {
-          const localCats = JSON.parse(localCatsStr);
-          const existingIds = new Set(items.map(c => c.id));
-          localCats.forEach((lc: any) => {
-            if (!existingIds.has(lc.id)) {
-              items.push(lc);
-            }
-          });
-        }
-      } catch (localErr) {
-        console.warn('Gagal memuat kategori lokal:', localErr);
-      }
-
-      // Sort descending by createdAt
+      // Di-sorting descending berdasarkan waktu pembuatan demi konsistensi data lintas device
       items.sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
       
       if (isMounted) {
@@ -110,18 +93,8 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
         setLoadingCat(false);
       }
     }, (error) => {
-      console.warn('Gagal realtime sync kategori:', error);
-      let fallbackItems: CategoryItem[] = [];
-      try {
-        const localCatsStr = localStorage.getItem('muara_custom_categories');
-        if (localCatsStr) {
-          fallbackItems = JSON.parse(localCatsStr);
-        }
-      } catch (e) {
-        console.warn('Gagal load localStorage fallback:', e);
-      }
+      console.error('Gagal mengambil data kategori dari cloud/cache server:', error);
       if (isMounted) {
-        setCategoriesList(fallbackItems);
         setLoadingCat(false);
       }
     });
@@ -132,10 +105,6 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
     };
   }, [refreshTrigger]);
 
-  const fetchCategories = async () => {
-    // Real-time synchronization is handled automatically by onSnapshot!
-  };
-
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catNameInput.trim()) {
@@ -143,7 +112,6 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
       return;
     }
 
-    // Show beautiful confirmation notification dialog first
     setCategoryToConfirm({
       name: catNameInput.trim(),
       imageUrl: catImagePath || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=200',
@@ -171,7 +139,10 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
           });
           setUploadProgress(100);
         } catch (uploadError: any) {
-          console.error('Unggahan Cloudinary gagal, menggunakan data-uri fallback:', uploadError);
+          console.error('Unggahan Cloudinary gagal:', uploadError);
+          onError('Gagal mengunggah gambar ke cloud storage.');
+          setLoadingSubmit(false);
+          return;
         }
       } else if (!finalImageUrl) {
         finalImageUrl = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=200';
@@ -184,34 +155,9 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
         createdAt: new Date().toISOString()
       };
 
-      // 1. Dual Write: Cloud Firestore
-      try {
-        const catDocRef = doc(firestore, 'categories', catId);
-        await setDoc(catDocRef, payload, { merge: true });
-      } catch (dbErr: any) {
-        console.warn('Simpan ke Firestore ditolak/gagal, memfungsikan Local Fallback:', dbErr);
-      }
-
-      // 2. Dual Write: Local Storage Fallback
-      try {
-        const localCatsStr = localStorage.getItem('muara_custom_categories') || '[]';
-        const localCats = JSON.parse(localCatsStr);
-        const existingIdx = localCats.findIndex((lc: any) => lc.id === catId);
-        const localPayload = {
-          id: catId,
-          name: payload.name,
-          imageUrl: payload.imageUrl,
-          createdAt: payload.createdAt
-        };
-        if (existingIdx > -1) {
-          localCats[existingIdx] = localPayload;
-        } else {
-          localCats.push(localPayload);
-        }
-        localStorage.setItem('muara_custom_categories', JSON.stringify(localCats));
-      } catch (localErr) {
-        console.warn('Gagal cadangkan kategori ke localStorage:', localErr);
-      }
+      // Murni melakukan penyimpanan ke Firestore, SDK Firebase akan otomatis mendistribusikan ke offline cache semua pengguna
+      const catDocRef = doc(firestore, 'categories', catId);
+      await setDoc(catDocRef, payload, { merge: true });
 
       onSuccess(categoryToConfirm.isEditingId ? 'Kategori berhasil diperbarui!' : 'Kategori baru sukses didaftarkan.');
       
@@ -223,7 +169,6 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
       setIsCatModalOpen(false);
       setCategoryToConfirm(null);
       
-      await fetchCategories();
     } catch (err: any) {
       onError(`Gagal Menyimpan: ${err.message}`);
     } finally {
@@ -242,30 +187,17 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
 
   const performDeleteCategory = async (id: string) => {
     setLoadingSubmit(true);
-    // Try firestore delete
     try {
       const docRef = doc(firestore, 'categories', id);
       await deleteDoc(docRef);
+      onSuccess('Kategori berhasil dihapus secara permanen.');
     } catch (err: any) {
-      console.warn('Gagal menghapus dari Firestore:', err);
+      console.error('Gagal menghapus dari Firestore cloud:', err);
+      onError(`Gagal menghapus kategori: ${err.message}`);
+    } finally {
+      setCategoryToDelete(null);
+      setLoadingSubmit(false);
     }
-
-    // Always delete from localStorage
-    try {
-      const localCatsStr = localStorage.getItem('muara_custom_categories');
-      if (localCatsStr) {
-        let localCats = JSON.parse(localCatsStr);
-        localCats = localCats.filter((lc: any) => lc.id !== id);
-        localStorage.setItem('muara_custom_categories', JSON.stringify(localCats));
-      }
-    } catch (localErr) {
-      console.warn('Gagal menghapus dari local storage:', localErr);
-    }
-
-    onSuccess('Kategori berhasil dihapus secara permanen.');
-    await fetchCategories();
-    setCategoryToDelete(null);
-    setLoadingSubmit(false);
   };
 
   return (
@@ -494,14 +426,14 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
                 </button>
                 <button
                   type="button"
+                  disabled={loadingSubmit}
                   onClick={async () => {
                     const idToDelete = categoryToDelete.id;
-                    setCategoryToDelete(null);
                     await performDeleteCategory(idToDelete);
                   }}
                   className="flex-1 py-2.5 bg-red-650 hover:bg-red-700 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
                 >
-                  Hapus Permanen
+                  {loadingSubmit ? 'Menghapus...' : 'Hapus Permanen'}
                 </button>
               </div>
             </motion.div>
