@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, 
   Save, 
@@ -13,8 +13,13 @@ import {
   Sparkles, 
   BookOpen,
   AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Type,
   Settings,
-  Scissors
+  Scissors,
+  Languages
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -46,13 +51,20 @@ export default function KitabTextEditor({
   const [targetWordCount, setTargetWordCount] = useState<number>(200);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
+  // Formatting options for perfect aesthetic customization
+  const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right' | 'justify'>('justify');
+  const [direction, setDirection] = useState<'ltr' | 'rtl' | 'auto'>('auto');
+  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl' | '2xl'>('lg');
+  const [lineHeight, setLineHeight] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   // Initialize editor pages when modal opens or initialPages changes
   useEffect(() => {
     if (isOpen) {
       if (initialPages && initialPages.length > 0) {
         setEditorPages([...initialPages]);
       } else if (initialTextBody) {
-        // Auto convert to pages if pages array is empty
         setEditorPages(autoSplitTextByWords(initialTextBody, targetWordCount));
       } else {
         setEditorPages(['']);
@@ -61,23 +73,55 @@ export default function KitabTextEditor({
     }
   }, [isOpen, initialPages, initialTextBody]);
 
-  // Helper to split text by word limits
+  // Helper to detect if text contains Arabic characters
+  const isArabicText = (text: string): boolean => {
+    return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+  };
+
+  // Get active page's text context
+  const activePageText = editorPages[activePageIndex] || '';
+
+  // Auto adjust height of the textarea to grow dynamically (preventing scroll inside the paper)
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const newHeight = Math.max(380, textareaRef.current.scrollHeight);
+      textareaRef.current.style.height = `${newHeight}px`;
+    }
+  }, [activePageText, fontSize, lineHeight, isOpen, activePageIndex]);
+
+  // Helper to split text by word limits without destroying any carriage returns, lines, or multiple enters
   const autoSplitTextByWords = (text: string, wordsPerPage: number): string[] => {
     if (!text) return [''];
     
-    // Clean excessive spaces first for premium word parsing
-    const cleanedText = text.replace(/[\s\t]+/g, ' ').replace(/\n\s*\n\s*\n/g, '\n\n').trim();
-    const words = cleanedText.split(/\s+/);
-    
-    if (words.length === 0 || words[0] === '') return [''];
-    
+    // Split on original structural line breaks to fully preserve user enters and paragraphs exactly as typed!
+    const lines = text.split(/\r?\n/);
     const chunks: string[] = [];
-    for (let i = 0; i < words.length; i += wordsPerPage) {
-      const slice = words.slice(i, i + wordsPerPage);
-      chunks.push(slice.join(' '));
+    let currentChunkLines: string[] = [];
+    let currentWordCount = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Count words in this line only (ignoring whitespaces)
+      const lineWordsCount = line.trim().split(/[ \t]+/).filter(Boolean).length;
+      
+      // If adding this line exceeds wordsPerPage AND we already have content on the active page,
+      // wrap up this page chunk cleanly.
+      if (currentWordCount > 0 && currentWordCount + lineWordsCount > wordsPerPage) {
+        chunks.push(currentChunkLines.join('\n'));
+        currentChunkLines = [line];
+        currentWordCount = lineWordsCount;
+      } else {
+        currentChunkLines.push(line);
+        currentWordCount += lineWordsCount;
+      }
+    }
+
+    if (currentChunkLines.length > 0) {
+      chunks.push(currentChunkLines.join('\n'));
     }
     
-    return chunks;
+    return chunks.length > 0 ? chunks : [''];
   };
 
   // Re-split the current overall text body based on the custom word limit
@@ -90,7 +134,7 @@ export default function KitabTextEditor({
     const newlySplit = autoSplitTextByWords(fullText, targetWordCount);
     setEditorPages(newlySplit);
     setActivePageIndex(0);
-    onSuccessMessage(`Teks berhasil di-split ulang otomatis menjadi ${newlySplit.length} Halaman (Target ~${targetWordCount} kata per halaman).`);
+    onSuccessMessage(`Teks berhasil di-split ulang otomatis menjadi ${newlySplit.length} Halaman (Target ~${targetWordCount} kata per halaman). Semua enter dan baris bawaan dipertahankan dengan rapi.`);
   };
 
   // Auto clean up spaces, multi-enters, tabs across all pages to make them pristine
@@ -318,10 +362,8 @@ export default function KitabTextEditor({
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* MAIN CONTENT WORKSPACE: MS WORD-STYLE SIMULATOR */}
-          <div className="flex-1 bg-slate-700 p-4 md:p-8 overflow-y-auto flex flex-col justify-start items-center relative scrollbar-thin">
+          </div>          {/* MAIN CONTENT WORKSPACE: MS WORD-STYLE SIMULATOR */}
+          <div className="flex-1 bg-slate-700/90 p-4 md:p-8 overflow-y-auto flex flex-col justify-start items-center relative scrollbar-thin scrollbar-thumb-slate-650">
             
             {/* TOOLBAR */}
             <div className="bg-slate-800 text-slate-200 p-2.5 px-4 rounded-xl border border-slate-600 w-full max-w-2xl mb-4 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2.5 shadow-lg">
@@ -347,47 +389,181 @@ export default function KitabTextEditor({
                   type="button"
                   disabled={activePageIndex === 0}
                   onClick={() => setActivePageIndex(prev => prev - 1)}
-                  className="p-1 px-2.5 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-40 transition-colors cursor-pointer"
+                  className="p-1 px-2.5 rounded bg-slate-700 hover:bg-slate-650 disabled:opacity-40 transition-colors cursor-pointer text-[10px]"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-                <span className="font-mono text-[10px] font-bold bg-slate-900 px-3 py-1 rounded text-white">{activePageIndex + 1}</span>
+                <span className="font-mono text-[11px] font-bold bg-slate-900 px-3 py-1 rounded text-white">{activePageIndex + 1}</span>
                 <button
                   type="button"
                   disabled={activePageIndex === editorPages.length - 1}
                   onClick={() => setActivePageIndex(prev => prev + 1)}
-                  className="p-1 px-2.5 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-40 transition-colors cursor-pointer"
+                  className="p-1 px-2.5 rounded bg-slate-700 hover:bg-slate-650 disabled:opacity-40 transition-colors cursor-pointer text-[10px]"
                 >
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
 
-            {/* SIMULATED PAPER SHEET (A4 STYLE PORTRAIT) */}
-            <div className="bg-white max-w-2xl w-full min-h-[460px] md:min-h-[620px] p-6 md:p-12 rounded-2xl border border-slate-650 shadow-2xl relative flex flex-col transition-all">
+            {/* SIMULATED PAPER SHEET (A4 STYLE PORTRAIT) - HEIGHT AUTO TO LET IT EXPAND VERTICALLY */}
+            <div className="bg-white max-w-2xl w-full h-auto min-h-[500px] p-6 md:p-10 rounded-2xl border border-slate-650 shadow-2xl relative flex flex-col transition-all mb-4">
               
-              {/* WORD-PROCESSOR HEADER METADATA */}
-              <div className="flex items-center justify-between border-b pb-3 mb-5 border-slate-100 font-mono text-[9px] text-slate-400 select-none">
+              {/* WORD-PROCESSOR HEADER METADATA & ARABIC DETECTION SHIELD */}
+              <div className="flex flex-wrap items-center justify-between border-b pb-2 mb-4 border-slate-150 font-mono text-[9px] text-slate-400 gap-2 select-none">
                 <span className="uppercase tracking-wide">MUARA MULTI-PAGE MANUSCRIPT PROCESSOR</span>
-                <span>TIPE: {kitabJenis.toUpperCase()}</span>
+                <div className="flex items-center gap-2">
+                  <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full text-[8.5px] font-bold uppercase">Tipe: {kitabJenis}</span>
+                  {isArabicText(activePageText) && (
+                    <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold animate-pulse">✨ Terdeteksi Tulisan Arab</span>
+                  )}
+                </div>
               </div>
 
-              {/* ACTIVE PAGE CONTENT */}
-              <div className="flex-1 flex flex-col relative">
-                <textarea
-                  value={editorPages[activePageIndex] || ''}
-                  onChange={(e) => {
-                    const updated = [...editorPages];
-                    updated[activePageIndex] = e.target.value;
-                    setEditorPages(updated);
-                  }}
-                  placeholder="Mulai mengetik atau merapikan baris hadis, terjemahan, atau penjelasan kitab untuk halaman ini..."
-                  className="flex-1 w-full min-h-[340px] p-4 resize-none outline-none focus:outline-none font-serif text-slate-850 text-sm md:text-base leading-relaxed bg-slate-50/50 rounded-xl border border-dashed border-slate-200 focus:border-emerald-300 focus:bg-white transition-all font-medium font-serif"
-                />
+              {/* DYNAMIC EDITING CONTROLS FOR PREMIUM ARABIC / INDONESIAN LAYOUTS */}
+              <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-2 mb-4 flex flex-wrap items-center justify-between gap-2.5 text-[10.5px]">
+                {/* DIRECTIVITY & ALIGNMENT */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Rata:</span>
+                  <div className="flex rounded-md bg-slate-205 p-0.5 border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setTextAlign('left')}
+                      className={`p-1 rounded cursor-pointer ${textAlign === 'left' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                      title="Rata Kiri"
+                    >
+                      <AlignLeft className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTextAlign('center')}
+                      className={`p-1 rounded cursor-pointer ${textAlign === 'center' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                      title="Rata Tengah (Tafsir/Syi'ir)"
+                    >
+                      <AlignCenter className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTextAlign('right')}
+                      className={`p-1 rounded cursor-pointer ${textAlign === 'right' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                      title="Rata Kanan (Sangat cocok untuk Hadis/Arab murni)"
+                    >
+                      <AlignRight className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTextAlign('justify')}
+                      className={`p-1 rounded cursor-pointer ${textAlign === 'justify' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                      title="Rata Kanan-Kiri"
+                    >
+                      <AlignJustify className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* DIRECTION MODE */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Arah:</span>
+                  <div className="flex rounded-md bg-slate-205 p-0.5 border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setDirection('auto')}
+                      className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'auto' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
+                      title="Otomatis menyesuaikan karakter bahasa"
+                    >
+                      Auto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDirection('ltr')}
+                      className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'ltr' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
+                      title="Left-to-Right (Latin / Terjemahan)"
+                    >
+                      LTR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDirection('rtl')}
+                      className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'rtl' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
+                      title="Right-to-Left (Arab / Pegon)"
+                    >
+                      RTL
+                    </button>
+                  </div>
+                </div>
+
+                {/* FONT SIZE SELECTION */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Ukuran:</span>
+                  <select
+                    value={fontSize}
+                    onChange={(e) => setFontSize(e.target.value as any)}
+                    className="bg-white border border-slate-200 rounded p-1 text-[10px] font-sans font-medium focus:outline-none text-slate-700 cursor-pointer"
+                  >
+                    <option value="sm">Kecil (13px)</option>
+                    <option value="base">Normal (15px)</option>
+                    <option value="lg">Sedang (17px)</option>
+                    <option value="xl">Besar (20px)</option>
+                    <option value="2xl">Ekstra Besar (24px)</option>
+                  </select>
+                </div>
+
+                {/* LINE HEIGHT SPACING */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Baris:</span>
+                  <select
+                    value={lineHeight}
+                    onChange={(e) => setLineHeight(e.target.value as any)}
+                    className="bg-white border border-slate-200 rounded p-1 text-[10px] font-sans font-medium focus:outline-none text-slate-700 cursor-pointer"
+                  >
+                    <option value="normal">Kompak</option>
+                    <option value="relaxed">Standard (Relaks)</option>
+                    <option value="loose">Renggang (Khusus Arab)</option>
+                  </select>
+                </div>
               </div>
+
+              {/* ACTIVE PAGE CONTENT AREA WITH THE AUTO-GROWING CAPABILITY */}
+              {(() => {
+                const computedDirection = direction === 'auto' 
+                  ? (isArabicText(activePageText) ? 'rtl' : 'ltr') 
+                  : direction;
+                const isRtl = computedDirection === 'rtl';
+
+                const alignClass = textAlign === 'left' ? 'text-left' :
+                                   textAlign === 'center' ? 'text-center' :
+                                   textAlign === 'right' ? 'text-right' : 'text-justify';
+
+                const sizeClass = fontSize === 'sm' ? 'text-xs md:text-sm' :
+                                  fontSize === 'base' ? 'text-sm md:text-base' :
+                                  fontSize === 'lg' ? 'text-base md:text-lg' :
+                                  fontSize === 'xl' ? 'text-lg md:text-xl' : 'text-xl md:text-2xl';
+
+                const leadingClass = lineHeight === 'normal' ? 'leading-normal' :
+                                     lineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+
+                const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
+
+                return (
+                  <div className="flex-1 flex flex-col relative w-full mb-1">
+                    <textarea
+                      ref={textareaRef}
+                      value={activePageText}
+                      onChange={(e) => {
+                        const updated = [...editorPages];
+                        updated[activePageIndex] = e.target.value;
+                        setEditorPages(updated);
+                      }}
+                      dir={computedDirection}
+                      placeholder="Mulai mengetik atau menyalin hadis, terjemahan, atau penjelasan kitab untuk halaman ini..."
+                      style={{ overflowY: 'hidden' }}
+                      className={`w-full min-h-[380px] p-4 resize-none outline-none focus:outline-none bg-slate-50/50 rounded-xl border border-dashed border-slate-200 focus:border-emerald-300 focus:bg-white transition-all font-medium text-slate-850 ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
+                    />
+                  </div>
+                );
+              })()}
 
               {/* WORD-PROCESSOR FOOTER METADATA */}
-              <div className="flex items-center justify-between border-t pt-4 mt-6 border-slate-100 font-mono text-[9.5px] text-slate-400 select-none">
+              <div className="flex items-center justify-between border-t pt-3 mt-4 border-slate-100 font-mono text-[9.5px] text-slate-400 select-none">
                 <span>Halaman {activePageIndex + 1} dari {editorPages.length}</span>
                 <span>{editorPages[activePageIndex]?.trim().split(/\s+/).filter(Boolean).length || 0} Kata</span>
               </div>
@@ -399,10 +575,15 @@ export default function KitabTextEditor({
             </div>
 
             {/* HELP BANNER */}
-            <div className="mt-4 p-3.5 bg-slate-800/80 text-[10.5px] leading-relaxed text-slate-300 max-w-2xl w-full rounded-xl border border-slate-700 flex items-start gap-2.5">
+            <div className="mt-2 p-3.5 bg-slate-800/80 text-[10.5px] leading-relaxed text-slate-300 max-w-2xl w-full rounded-xl border border-slate-700 flex items-start gap-2.5">
               <Sparkles className="h-3.5 w-3.5 text-amber-300 flex-shrink-0 mt-0.5 animate-pulse" />
               <div>
-                <strong className="text-amber-300">Tips Format & Spasi:</strong> Pembagian halaman yang konsisten membuat santri lebih betah membaca. Gunakan tombol <span className="bg-emerald-950 text-emerald-300 font-mono px-1 py-0.2 rounded font-bold">Auto-Spasi & Enter</span> untuk merapikan spasi tak terlihat, lalu pakai <span className="bg-amber-300 text-slate-950 font-mono px-1 py-0.2 rounded font-bold">Auto-Split</span> untuk mendistribusikan materi per halaman secara proporsional.
+                <strong className="text-amber-300">Tips Format & Penyuntingan Pintar:</strong> 
+                <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-350">
+                  <li>Tombol <span className="text-white bg-slate-700 px-1 rounded">Auto-Split</span> membagi teks berdasarkan hitungan kata, akan tetapi <span className="text-amber-300 font-bold">tetap mempertahankan format paragraf dan enter Anda</span> agar tidak berantakan.</li>
+                  <li>Lembaran kertas di atas <span className="text-emerald-300 font-bold">akan memanjang otomatis ke bawah secara dinamis</span> saat Anda mengetik, sehingga Anda dapat melakukan scroll ruang halaman dengan leluasa.</li>
+                  <li>Tulisan Arab terdeteksi secara otomatis, mengaktifkan arah kanan-ke-kiri (RTL) dan font Arab <span className="font-arabic font-bold text-amber-200">Amiri</span> berketinggian renggang agar syakal harakat hadis/ayat terlihat sangat jelas dan rapi.</li>
+                </ul>
               </div>
             </div>
 
