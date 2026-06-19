@@ -90,38 +90,45 @@ export default function KitabTextEditor({
     }
   }, [activePageText, fontSize, lineHeight, isOpen, activePageIndex]);
 
-  // Helper to split text by word limits without destroying any carriage returns, lines, or multiple enters
+  // Helper to split text by word limits while preserving original whitespace (tabs, spaces, enters) exactly
   const autoSplitTextByWords = (text: string, wordsPerPage: number): string[] => {
     if (!text) return [''];
     
-    // Split on original structural line breaks to fully preserve user enters and paragraphs exactly as typed!
-    const lines = text.split(/\r?\n/);
+    // Split utilizing capturing parenthesized group so separators are fully preserved
+    const tokens = text.split(/(\s+)/);
     const chunks: string[] = [];
-    let currentChunkLines: string[] = [];
+    let currentChunkTokens: string[] = [];
     let currentWordCount = 0;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      // Count words in this line only (ignoring whitespaces)
-      const lineWordsCount = line.trim().split(/[ \t]+/).filter(Boolean).length;
-      
-      // If adding this line exceeds wordsPerPage AND we already have content on the active page,
-      // wrap up this page chunk cleanly.
-      if (currentWordCount > 0 && currentWordCount + lineWordsCount > wordsPerPage) {
-        chunks.push(currentChunkLines.join('\n'));
-        currentChunkLines = [line];
-        currentWordCount = lineWordsCount;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (i % 2 === 0) {
+        // Even indexes are word/content tokens
+        if (token !== '') {
+          currentWordCount++;
+        }
+        currentChunkTokens.push(token);
       } else {
-        currentChunkLines.push(line);
-        currentWordCount += lineWordsCount;
+        // Odd indexes are original whitespace characters (spaces, tabs, enters)
+        // If we have met or exceeded the word limit for this page AND there are more words left,
+        // we split clean at this boundary.
+        if (currentWordCount >= wordsPerPage && i + 1 < tokens.length) {
+          chunks.push(currentChunkTokens.join(''));
+          currentChunkTokens = [];
+          currentWordCount = 0;
+        } else {
+          currentChunkTokens.push(token);
+        }
       }
     }
 
-    if (currentChunkLines.length > 0) {
-      chunks.push(currentChunkLines.join('\n'));
+    if (currentChunkTokens.length > 0) {
+      chunks.push(currentChunkTokens.join(''));
     }
-    
-    return chunks.length > 0 ? chunks : [''];
+
+    // Clean leading/trailing whitespaces on page boundaries but keep all inner structure perfectly preserved
+    const trimmedChunks = chunks.map(c => c.trim()).filter(Boolean);
+    return trimmedChunks.length > 0 ? trimmedChunks : [''];
   };
 
   // Re-split the current overall text body based on the custom word limit
