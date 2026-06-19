@@ -20,6 +20,7 @@ import { UserProfile } from '../types';
 import { MOCK_KITABS } from '../data/mockData';
 import { collection, getDocs } from 'firebase/firestore';
 import { firestore } from '../lib/firebaseConfig';
+import { indexedDbService } from '../lib/indexedDbService';
 import BahtsulMasail from './BahtsulMasail';
 
 // Helper to derive API URL for Capacitor or Web
@@ -129,6 +130,26 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       });
     } catch (err) {
       console.warn('Santri AI RAG background loader skipped:', err);
+    }
+
+    // Try merging offline-cached heavy kitabs from IndexedDB
+    try {
+      const offlineKitabs = await indexedDbService.getAllKitabs();
+      if (offlineKitabs && offlineKitabs.length > 0) {
+        list = list.map(item => {
+          const offlineMatch = offlineKitabs.find((ok: any) => ok.id === item.id);
+          if (offlineMatch) {
+            return {
+              ...item,
+              pages: offlineMatch.pages || [],
+              textBody: offlineMatch.textBody || ''
+            };
+          }
+          return item;
+        });
+      }
+    } catch (offlineErr) {
+      console.warn('Gagal memuat offline kitabs untuk RAG:', offlineErr);
     }
 
     // Try local storage custom kitabs

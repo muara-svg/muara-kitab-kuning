@@ -27,6 +27,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { indexedDbService } from '../lib/indexedDbService';
 import { UserProfile } from '../types';
+import { firestore } from '../lib/firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
 
 interface KitabReaderProps {
   kitab: any; // Can be MOCK structured KitabKuning or Firestore KitabItem
@@ -57,6 +59,7 @@ export default function KitabReader({
   const [isSavedOffline, setIsSavedOffline] = useState<boolean>(false);
   const [savingOffline, setSavingOffline] = useState<boolean>(false);
   const [loadedFromLocal, setLoadedFromLocal] = useState<boolean>(false);
+  const [loadingContent, setLoadingContent] = useState<boolean>(false);
   const [currentKitabData, setCurrentKitabData] = useState<any>(kitab);
 
   // Security Java instruction guide modal status
@@ -257,9 +260,69 @@ export default function KitabReader({
         setLoadedFromLocal(false);
       }
     } else {
-      // Pull original prop
-      setCurrentKitabData(kitab);
-      setLoadedFromLocal(false);
+      // Online mode, fetch on-demand if the prop is lacking the full text
+      const isMockOrLocalCustom = !kitab.id || !kitab.id.startsWith('kitab-');
+      const needsCloudFetch = !isMockOrLocalCustom && !kitab.textBody && (!kitab.pages || kitab.pages.length === 0);
+
+      if (needsCloudFetch) {
+        setLoadingContent(true);
+        // Pre-emptively load from local IndexedDB cache if available
+        try {
+          const localData = await indexedDbService.getKitab(kitab.id);
+          if (localData && (localData.textBody || (localData.pages && localData.pages.length > 0))) {
+            console.log(`[MUARA Reader] Cache lokal terbaca untuk "${kitab.title}". Menghindari query cloud.`);
+            setCurrentKitabData(localData);
+            setLoadedFromLocal(true);
+            setLoadingContent(false);
+            return;
+          }
+        } catch (localCheckErr) {
+          console.warn('[MUARA Reader Cache Check] Gagal memeriksa IndexedDB cache:', localCheckErr);
+        }
+
+        try {
+          const contentSnap = await getDoc(doc(firestore, 'kitab_contents', kitab.id));
+          if (contentSnap.exists()) {
+            const cData = contentSnap.data();
+            const merged = {
+              ...kitab,
+              pages: cData.pages || [],
+              textBody: cData.textBody || ''
+            };
+            setCurrentKitabData(merged);
+            setLoadedFromLocal(false);
+            
+            // Auto cache with heavy body to IndexedDB quietly for offline stability!
+            try {
+              const alreadySaved = await indexedDbService.isSaved(kitab.id);
+              if (!alreadySaved) {
+                console.log(`[Auto-Caching Merged Content] "${kitab.title}"...`);
+                await indexedDbService.saveKitab(merged);
+                setIsSavedOffline(true);
+              }
+            } catch (cacheErr) {
+              console.warn('[Auto-Caching Merged Content Error]:', cacheErr);
+            }
+          } else {
+            setCurrentKitabData(kitab);
+            setLoadedFromLocal(false);
+          }
+        } catch (err: any) {
+          const errMsg = err?.message || String(err);
+          if (errMsg.toLowerCase().includes('offline') || err?.code === 'unavailable') {
+            console.warn("[MUARA Reader Offline Catch] Perangkat luring atau koneksi terputus. Menggunakan data dasar:", errMsg);
+          } else {
+            console.error("Gagal mengambil isi teks kitab dari cloud:", err);
+          }
+          setCurrentKitabData(kitab);
+          setLoadedFromLocal(false);
+        } finally {
+          setLoadingContent(false);
+        }
+      } else {
+        setCurrentKitabData(kitab);
+        setLoadedFromLocal(false);
+      }
     }
   };
 
@@ -522,8 +585,15 @@ public class MainActivity extends BridgeActivity {
           {/* PAGE INNER CONTAINER & MEMORY OPTIMIZATION */}
           <div ref={readerScrollContainerRef} className="flex-1 overflow-y-auto bg-slate-50/70">
             
-            {/* Jika offline tetapi file lokal belum diunduh, tampilkan edukasi panduan */}
-            {activeOffline && !loadedFromLocal ? (
+            {loadingContent ? (
+              <div className="flex flex-col items-center justify-center p-10 py-24 text-center space-y-4 max-w-sm mx-auto h-full">
+                <Loader2 className="h-10 w-10 text-emerald-800 animate-spin shrink-0" />
+                <h4 className="font-extrabold text-slate-800 text-sm">Memuat Isi Teks Kitab...</h4>
+                <p className="text-xs text-slate-450 leading-relaxed font-sans">
+                  Harap tunggu sejenak, data teks sedang diambil dengan aman dari cloud server MUARA.
+                </p>
+              </div>
+            ) : activeOffline && !loadedFromLocal ? (
               <div className="flex flex-col items-center justify-center p-10 py-20 text-center space-y-4 max-w-sm mx-auto">
                 <WifiOff className="h-14 w-14 text-slate-350" />
                 <h4 className="font-extrabold text-slate-700 text-sm">Kitab Belum Tersedia Offline</h4>

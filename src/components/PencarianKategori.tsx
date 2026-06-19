@@ -669,8 +669,12 @@ export default function PencarianKategori({
                       className={`w-full p-2.5 sm:p-3.5 rounded-2xl border transition-all text-left relative flex items-center justify-between gap-2.5 sm:gap-4 shadow-3xs hover:-translate-y-0.5 duration-205 group cursor-pointer ${getElegantMixBg(kitab.id, index)}`}
                     >
                       <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-                        {/* a. Gambar kitab - super compressed on mobile */}
-                        <div className="relative w-8 h-10 sm:w-11 sm:h-14 shrink-0 rounded-lg overflow-hidden bg-white border border-slate-200/70 shadow-4xs flex items-center justify-center">
+                        {/* a. Gambar kitab - premium 3D book cover spine simulation */}
+                        <div className="relative w-9 h-12 sm:w-11 sm:h-15 shrink-0 rounded-r-md rounded-l-xs overflow-hidden bg-white border-y border-r border-slate-200/90 shadow-[4px_4px_8px_rgba(0,0,0,0.12)] flex items-center justify-center pl-1 group-hover:shadow-[5px_5px_12px_rgba(0,0,0,0.18)] transition-all duration-300">
+                          {/* Book spine line simulation */}
+                          <div className="absolute top-0 bottom-0 left-0 w-1 bg-gradient-to-r from-[#032e23]/35 to-transparent z-20 border-r border-[#032e23]/5" />
+                          <div className="absolute top-0 bottom-0 left-1 w-[0.5px] bg-white/30 z-20" />
+
                           <img 
                             src={kitab.coverUrl} 
                             alt={kitab.title} 
@@ -681,28 +685,47 @@ export default function PencarianKategori({
                             }}
                           />
                           {/* Luxe shine effect */}
-                          <div className="absolute inset-y-0 left-0 w-[1.5px] bg-white/20 pointer-events-none" />
+                          <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent pointer-events-none" />
                         </div>
 
                         {/* Text Info */}
-                        <div className="min-w-0">
-                          {/* b. Nama kitab */}
-                          <h4 className="font-extrabold text-[#111827] text-[11px] sm:text-xs leading-tight line-clamp-1 group-hover:text-emerald-800 transition-colors">
-                            {kitab.title}
-                          </h4>
+                        <div className="min-w-0 flex-1">
+                          {/* b. Nama kitab & Page Count Indicator */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="font-extrabold text-[#111827] text-[11px] sm:text-[12px] leading-tight line-clamp-1 group-hover:text-emerald-800 transition-colors">
+                              {kitab.title}
+                            </h4>
+                            
+                            {/* Physical Page Count bubble calculated dynamically for professional vibe */}
+                            {(() => {
+                              const pageCount = kitab.pages?.length || (kitab.textBody ? Math.ceil(kitab.textBody.length / 1500) : 1);
+                              return (
+                                <span className="inline-flex items-center gap-0.5 text-[7px] sm:text-[8px] font-mono font-bold text-slate-500 bg-slate-100 px-1 py-0.2 rounded border border-slate-200/60 shadow-5xs">
+                                  📄 {pageCount} hal
+                                </span>
+                              );
+                            })()}
+                          </div>
+
                           {kitab.arabicTitle && (
-                            <p className="font-arabic text-emerald-800 text-[9px] leading-none mt-0.5" dir="rtl">
+                            <p className="font-arabic text-emerald-800 text-[10px] leading-none mt-1" dir="rtl">
                               {kitab.arabicTitle}
                             </p>
                           )}
                           
-                          {/* c. Penulis */}
-                          <p className="text-[9px] text-slate-400 font-bold uppercase truncate mt-0.5 tracking-wider">
-                            Oleh: {kitab.author || 'Anonim'}
-                          </p>
+                          {/* c. Penulis & Format */}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <p className="text-[9px] text-slate-400 font-bold uppercase truncate tracking-wider max-w-[120px]">
+                              Oleh: {kitab.author || 'Anonim'}
+                            </p>
+                            <span className="text-[8px] text-slate-350">•</span>
+                            <span className="text-[8px] font-bold text-slate-450 uppercase tracking-widest bg-slate-100/60 px-1 rounded-sm border border-slate-150/50">
+                              {kitab.jenisKitab || 'TERJEMAH'}
+                            </span>
+                          </div>
 
                           {/* d. Penanda Kitab Premium dan Gratis */}
-                          <div className="mt-1">
+                          <div className="mt-1.5">
                             {kitab.isPremium ? (
                               <span className="inline-flex items-center text-[7px] sm:text-[8px] font-black uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-250 tracking-wider shadow-4xs">
                                 💎 VIP Member

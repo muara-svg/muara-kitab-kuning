@@ -43,6 +43,7 @@ import {
   increment
 } from 'firebase/firestore';
 import { firestore } from '../lib/firebaseConfig';
+import { indexedDbService } from '../lib/indexedDbService';
 import { MOCK_KITABS } from '../data/mockData';
 import KitabReader from './KitabReader';
 import BahtsulMasailMyPosts from './BahtsulMasailMyPosts';
@@ -206,6 +207,26 @@ export default function BahtsulMasail({
         });
       } catch (err) {
         console.warn('Firestore kitabs load bypass in BahtsulMasail:', err);
+      }
+
+      // Try merging offline-cached heavy kitabs from IndexedDB
+      try {
+        const offlineKitabs = await indexedDbService.getAllKitabs();
+        if (offlineKitabs && offlineKitabs.length > 0) {
+          list = list.map(item => {
+            const offlineMatch = offlineKitabs.find((ok: any) => ok.id === item.id);
+            if (offlineMatch) {
+              return {
+                ...item,
+                pages: offlineMatch.pages || [],
+                textBody: offlineMatch.textBody || ''
+              };
+            }
+            return item;
+          });
+        }
+      } catch (offlineErr) {
+        console.warn('Gagal memuat offline kitabs untuk RAG:', offlineErr);
       }
 
       // 3. Merge with custom kitabs stored in localStorage

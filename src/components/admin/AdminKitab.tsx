@@ -7,13 +7,24 @@ import {
   Image as ImageIcon, 
   Loader2, 
   CheckCircle,
-  Sparkles
+  Sparkles,
+  ArrowUp,
+  ArrowDown,
+  PlusCircle,
+  MinusCircle,
+  Save,
+  FileText,
+  X,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { firestore } from '../../lib/firebaseConfig';
+import { indexedDbService } from '../../lib/indexedDbService';
 import { 
   collection, 
   doc, 
+  getDoc,
   setDoc, 
   onSnapshot,
   deleteDoc, 
@@ -22,6 +33,7 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { uploadToCloudinaryDirect } from '../../lib/cloudinaryConfig';
+import KitabTextEditor from './editors/KitabTextEditor';
 
 export interface KitabItem {
   id: string;
@@ -76,6 +88,45 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
 
   // Confirmation overlay state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // Word Editor states
+  const [kitabPages, setKitabPages] = useState<string[]>([]);
+  const [isWordEditorOpen, setIsWordEditorOpen] = useState(false);
+
+  const convertTextToPages = (text: string): string[] => {
+    if (!text) return [];
+    
+    // Split by custom page delimiters if present
+    const pdfMarkerRegex = /---\s*Halaman\s+\d+\s*---/i;
+    if (pdfMarkerRegex.test(text)) {
+      const splitParts = text.split(/---\s*Halaman\s+\d+\s*---/i);
+      return splitParts
+        .map(part => part.trim())
+        .filter(part => part.length > 0);
+    }
+
+    // Group text paragraphs to around 1500 characters per page
+    const paragraphs = text.split('\n');
+    const resultChunks: string[] = [];
+    let currentBlock = '';
+    
+    paragraphs.forEach((p) => {
+      if ((currentBlock + '\n' + p).length > 1500) {
+        if (currentBlock.trim()) {
+          resultChunks.push(currentBlock.trim());
+        }
+        currentBlock = p;
+      } else {
+        currentBlock += (currentBlock ? '\n' : '') + p;
+      }
+    });
+
+    if (currentBlock.trim()) {
+      resultChunks.push(currentBlock.trim());
+    }
+
+    return resultChunks.length > 0 ? resultChunks : [text];
+  };
 
   // Memuat data kategori dan kitab secara realtime melalui Cloud Firestore Cache Pipeline
   useEffect(() => {
@@ -297,7 +348,9 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       }
 
       setKitabTextBody(resultText);
-      onSuccess(`Teks berkas berhasil diimpor (${resultText.split(/\s+/).length} kata). Silakan periksa di kotak teks.`);
+      const converted = convertTextToPages(resultText);
+      setKitabPages(converted);
+      onSuccess(`Teks berkas berhasil diimpor (${resultText.split(/\s+/).length} kata, terbagi dalam ${converted.length} halaman). Silakan periksa di kotak teks.`);
     } catch (err: any) {
       console.error(err);
       onError(`Gagal mengonversi file: ${err.message}`);
@@ -336,7 +389,15 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     setPdfProcessingStatus('');
 
     let finalCoverUrl = kitabCoverPreview;
-    const finalPages = kitabTextBody.split(/\n\s*\n/).filter(line => line.trim().length > 0);
+    
+    // Use manually designed pages if available; else fallback to auto-split
+    let finalPages = [...kitabPages];
+    if (finalPages.length === 0 && kitabTextBody.trim()) {
+      finalPages = convertTextToPages(kitabTextBody);
+    }
+    if (finalPages.length === 0) {
+      finalPages = [kitabTextBody || 'Teks kosong atau kosong dalam proses.'];
+    }
 
     try {
       if (kitabCoverFile) {
@@ -349,10 +410,13 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         });
       }
 
+      setPdfProcessingStatus('Menyimpan perubahan metadata & teks lengkap ke Cloud...');
       const targetId = isEditingKitabId || `kitab-${Date.now()}`;
       const docRef = doc(firestore, 'kitabs', targetId);
+      const contentRef = doc(firestore, 'kitab_contents', targetId);
 
-      const payload = {
+      // Lightweight metadata to keep the query listings and sync fast
+      const metadataPayload = {
         id: targetId,
         title: kitabTitle,
         arabicTitle: kitabArabicTitle || '',
@@ -361,14 +425,39 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         isPremium: kitabIsPremium,
         coverUrl: finalCoverUrl || 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=300',
         sourceType: 'text',
-        pages: finalPages,
-        textBody: kitabTextBody,
         jenisKitab: kitabJenis,
+        pages: [], // Keep empty in metadata to avoid Firestore 1MB limits
+        textBody: '', // Keep empty in metadata to avoid Firestore 1MB limits
         createdAt: isEditingKitabId ? serverTimestamp() : new Date().toISOString()
       };
 
-      // Murni dilempar ke Cloud Firestore, Sinkronisasi cache offline ditangani penuh oleh SDK Firebase Auth & Database
-      await setDoc(docRef, payload, { merge: true });
+      // Heavy content document stored separately
+      const contentPayload = {
+        id: targetId,
+        pages: finalPages,
+        textBody: kitabTextBody,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Optimize: Save metadata and heavy content concurrently to save network roundtrip times!
+      await Promise.all([
+        setDoc(docRef, metadataPayload, { merge: true }),
+        setDoc(contentRef, contentPayload, { merge: true })
+      ]);
+
+      // Cache directly in IndexedDB for instantaneous offline sync on same/all clients
+      try {
+        const mergedCache = {
+          ...metadataPayload,
+          pages: finalPages,
+          textBody: kitabTextBody,
+          createdAt: new Date().toISOString()
+        };
+        await indexedDbService.saveKitab(mergedCache);
+        console.log(`[IndexedDB Sync SUCCESS] Proactively cached "${kitabTitle}" to offline repository.`);
+      } catch (cacheErr) {
+        console.warn('Silent local caching warning:', cacheErr);
+      }
 
       onSuccess(isEditingKitabId ? 'Metadata Kitab berhasil dikoreksi.' : 'Kitab baru sukses didaftarkan.');
       
@@ -380,6 +469,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       setKitabIsPremium(false);
       setKitabSourceType('file');
       setKitabTextBody('');
+      setKitabPages([]);
       setKitabJenis('terjemah');
       setKitabCoverFile(null);
       setKitabCoverPreview('');
@@ -395,7 +485,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     }
   };
 
-  const handleInitializeEditKitab = (kitab: KitabItem) => {
+  const handleInitializeEditKitab = async (kitab: KitabItem) => {
     setIsEditingKitabId(kitab.id);
     setKitabTitle(kitab.title);
     setKitabArabicTitle(kitab.arabicTitle || '');
@@ -403,13 +493,50 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     setKitabAuthor(kitab.author);
     setKitabIsPremium(kitab.isPremium);
     setKitabSourceType('text');
-    setKitabTextBody(kitab.textBody || (kitab.pages ? kitab.pages.join('\n\n') : ''));
     setKitabCoverPreview(kitab.coverUrl || '');
     setKitabCoverFile(null);
     setKitabJenis(kitab.jenisKitab || 'terjemah');
     setPdfUploadPercentage(0);
-    setPdfProcessingStatus('');
+    setPdfProcessingStatus('Memuat detail teks kitab...');
     setIsKitabModalOpen(true);
+
+    // Pre-emptively load from local IndexedDB cache if available
+    try {
+      const localData = await indexedDbService.getKitab(kitab.id);
+      if (localData && (localData.textBody || (localData.pages && localData.pages.length > 0))) {
+        setKitabTextBody(localData.textBody || (localData.pages ? localData.pages.join('\n\n') : ''));
+        setKitabPages(localData.pages || []);
+        setPdfProcessingStatus('');
+        return;
+      }
+    } catch (localCheckErr) {
+      console.warn('[AdminKitab Cache Check] Gagal memeriksa IndexedDB cache:', localCheckErr);
+    }
+
+    try {
+      const contentSnap = await getDoc(doc(firestore, 'kitab_contents', kitab.id));
+      if (contentSnap.exists()) {
+        const cData = contentSnap.data();
+        setKitabTextBody(cData.textBody || '');
+        setKitabPages(cData.pages || []);
+      } else {
+        const fallbackText = kitab.textBody || (kitab.pages ? kitab.pages.join('\n\n') : '');
+        setKitabTextBody(fallbackText);
+        setKitabPages(kitab.pages || (fallbackText ? convertTextToPages(fallbackText) : []));
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.toLowerCase().includes('offline') || err?.code === 'unavailable') {
+        console.warn("[AdminKitab Offline Catch] Perangkat luring atau koneksi terputus saat memuat isi teks:", errMsg);
+      } else {
+        console.error('Gagal mengambil isi teks kitab:', err);
+      }
+      const fallbackText = kitab.textBody || (kitab.pages ? kitab.pages.join('\n\n') : '');
+      setKitabTextBody(fallbackText);
+      setKitabPages(kitab.pages || (fallbackText ? convertTextToPages(fallbackText) : []));
+    } finally {
+      setPdfProcessingStatus('');
+    }
   };
 
   const initiateDeleteKitab = (id: string, title: string) => {
@@ -426,6 +553,11 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     
     try {
       await deleteDoc(doc(firestore, 'kitabs', targetId));
+      try {
+        await deleteDoc(doc(firestore, 'kitab_contents', targetId));
+      } catch (contentErr) {
+        console.warn('Gagal menghapus content kitab dari Cloud:', contentErr);
+      }
       onSuccess('Kitab berhasil dihapus dari repositori.');
     } catch (err: any) {
       console.error('Gagal menghapus kitab dari Firestore cloud:', err);
@@ -706,11 +838,26 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                   
                   {kitabTextBody.trim().length > 0 && (
                     <div className="space-y-1.5 mt-3 pt-3 border-t border-slate-200">
-                      <label className="block font-bold text-emerald-800 uppercase text-[9px] font-mono">Hasil Konversi Dokumen (Dapat diedit):</label>
+                      <div className="flex items-center justify-between">
+                        <label className="block font-bold text-emerald-800 uppercase text-[9px] font-mono">Hasil Konversi Dokumen:</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsWordEditorOpen(true);
+                          }}
+                          className="flex items-center gap-1 bg-[#064e3b] text-white px-2 py-1 rounded-lg font-bold hover:bg-emerald-900 transition-all text-[9.5px] cursor-pointer mb-0.5 shadow-2xs"
+                        >
+                          <Edit2 className="h-2.5 w-2.5" /> Edit Teks
+                        </button>
+                      </div>
                       <textarea
                         rows={6}
                         value={kitabTextBody}
-                        onChange={(e) => setKitabTextBody(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setKitabTextBody(val);
+                          setKitabPages(convertTextToPages(val));
+                        }}
                         placeholder="Hasil teks akan dirender di sini..."
                         className="w-full border p-2 rounded-xl text-slate-800 font-mono text-[10px] bg-white leading-relaxed"
                       />
@@ -720,12 +867,27 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <label className="block font-bold text-[#064e3b] uppercase text-[9px] font-mono">8. Salinan Kitab / Teks Manual (Ketik Bab)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="block font-bold text-[#064e3b] uppercase text-[9px] font-mono font-sans">8. Teks Utama / Manual (Ketik Bab)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsWordEditorOpen(true);
+                      }}
+                      className="flex items-center gap-1 bg-[#064e3b] text-white px-2 py-1 rounded-lg font-bold hover:bg-emerald-900 transition-all text-[9.5px] cursor-pointer mb-0.5 shadow-2xs"
+                    >
+                      <Edit2 className="h-2.5 w-2.5" /> Edit Teks
+                    </button>
+                  </div>
                   <textarea
                     rows={6}
                     required
                     value={kitabTextBody}
-                    onChange={(e) => setKitabTextBody(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setKitabTextBody(val);
+                      setKitabPages(convertTextToPages(val));
+                    }}
                     placeholder="Tempel atau ketik naskah kitab kuning lengkap ribuan kalimat di sini..."
                     className="w-full border p-2 rounded-xl text-slate-800 font-mono text-[10.5px] leading-relaxed"
                   />
@@ -761,6 +923,22 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
           </div>
         </div>
       )}
+
+      {/* WORD EDITOR FULLSCREEN MODAL */}
+      <KitabTextEditor
+        isOpen={isWordEditorOpen}
+        onClose={() => setIsWordEditorOpen(false)}
+        kitabTitle={kitabTitle}
+        kitabJenis={kitabJenis}
+        initialPages={kitabPages}
+        initialTextBody={kitabTextBody}
+        onSave={(pages, textBody) => {
+          setKitabPages(pages);
+          setKitabTextBody(textBody);
+          setIsWordEditorOpen(false);
+        }}
+        onSuccessMessage={(msg) => onSuccess(msg)}
+      />
 
       {/* DIALOG KONFIRMASI KUSTOM SEBELUM MENYIMPAN */}
       <AnimatePresence>
