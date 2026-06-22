@@ -431,18 +431,90 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         createdAt: isEditingKitabId ? serverTimestamp() : new Date().toISOString()
       };
 
-      // Heavy content document stored separately
-      const contentPayload = {
-        id: targetId,
-        pages: finalPages,
-        textBody: kitabTextBody,
-        updatedAt: new Date().toISOString()
-      };
+      // Determine size segmentation
+      const PAGES_PER_CHUNK = 15;
+      const totalPages = finalPages.length;
+      
+      let mainContentPayload: any = {};
+      const chunkWrites: Promise<any>[] = [];
+      let oldChunkCount = 0;
 
-      // Optimize: Save metadata and heavy content concurrently to save network roundtrip times!
+      // 1. Detect if old doc was segmented for cleanup
+      try {
+        const oldSnap = await getDoc(contentRef);
+        if (oldSnap.exists()) {
+          const oldData = oldSnap.data();
+          if (oldData.isSegmented) {
+            oldChunkCount = oldData.chunkCount || 0;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not read old content info for cleanup:', e);
+      }
+
+      if (totalPages > PAGES_PER_CHUNK) {
+        // Chunking/segmentation!
+        const chunks: string[][] = [];
+        for (let i = 0; i < totalPages; i += PAGES_PER_CHUNK) {
+          chunks.push(finalPages.slice(i, i + PAGES_PER_CHUNK));
+        }
+
+        mainContentPayload = {
+          id: targetId,
+          isSegmented: true,
+          chunkCount: chunks.length,
+          totalPageCount: totalPages,
+          pages: [], // Keep empty in the main document to ensure it remains well under 1MB
+          textBody: '', // Keep empty in the main document to ensure it remains well under 1MB
+          updatedAt: new Date().toISOString()
+        };
+
+        // Write chunk documents
+        chunks.forEach((chunkPages, index) => {
+          const chunkId = `${targetId}_chunk_${index}`;
+          const chunkRef = doc(firestore, 'kitab_contents', chunkId);
+          const chunkPayload = {
+            id: chunkId,
+            kitabId: targetId,
+            chunkIndex: index,
+            pages: chunkPages,
+            updatedAt: new Date().toISOString()
+          };
+          chunkWrites.push(setDoc(chunkRef, chunkPayload, { merge: true }));
+        });
+
+        // Clean up any stale chunks if the new chunk count is less than the old chunk count
+        if (oldChunkCount > chunks.length) {
+          for (let i = chunks.length; i < oldChunkCount; i++) {
+            const chunkId = `${targetId}_chunk_${i}`;
+            chunkWrites.push(deleteDoc(doc(firestore, 'kitab_contents', chunkId)));
+          }
+        }
+      } else {
+        // Under threshold: Use single document (backward compatible)
+        mainContentPayload = {
+          id: targetId,
+          isSegmented: false,
+          chunkCount: 0,
+          pages: finalPages,
+          textBody: kitabTextBody,
+          updatedAt: new Date().toISOString()
+        };
+
+        // Clean up all old chunk documents since the book is now unsegmented
+        if (oldChunkCount > 0) {
+          for (let i = 0; i < oldChunkCount; i++) {
+            const chunkId = `${targetId}_chunk_${i}`;
+            chunkWrites.push(deleteDoc(doc(firestore, 'kitab_contents', chunkId)));
+          }
+        }
+      }
+
+      // Optimize: Save metadata, main content, and any chunks concurrently!
       await Promise.all([
         setDoc(docRef, metadataPayload, { merge: true }),
-        setDoc(contentRef, contentPayload, { merge: true })
+        setDoc(contentRef, mainContentPayload, { merge: true }),
+        ...chunkWrites
       ]);
 
       // Cache directly in IndexedDB for instantaneous offline sync on same/all clients
@@ -517,8 +589,26 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       const contentSnap = await getDoc(doc(firestore, 'kitab_contents', kitab.id));
       if (contentSnap.exists()) {
         const cData = contentSnap.data();
-        setKitabTextBody(cData.textBody || '');
-        setKitabPages(cData.pages || []);
+        if (cData.isSegmented) {
+          const chunkCount = cData.chunkCount || 0;
+          const chunkPromises = [];
+          for (let i = 0; i < chunkCount; i++) {
+            chunkPromises.push(getDoc(doc(firestore, 'kitab_contents', `${kitab.id}_chunk_${i}`)));
+          }
+          const chunkSnaps = await Promise.all(chunkPromises);
+          let allPages: string[] = [];
+          for (const snap of chunkSnaps) {
+            if (snap.exists()) {
+              allPages = allPages.concat(snap.data().pages || []);
+            }
+          }
+          const fullText = allPages.join('\n\n');
+          setKitabTextBody(fullText);
+          setKitabPages(allPages);
+        } else {
+          setKitabTextBody(cData.textBody || '');
+          setKitabPages(cData.pages || []);
+        }
       } else {
         const fallbackText = kitab.textBody || (kitab.pages ? kitab.pages.join('\n\n') : '');
         setKitabTextBody(fallbackText);
@@ -553,10 +643,34 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     
     try {
       await deleteDoc(doc(firestore, 'kitabs', targetId));
+      
+      // Look up if old document was segmented to clean up chunks
+      let chunkCount = 0;
       try {
-        await deleteDoc(doc(firestore, 'kitab_contents', targetId));
+        const contentSnap = await getDoc(doc(firestore, 'kitab_contents', targetId));
+        if (contentSnap.exists()) {
+          const cData = contentSnap.data();
+          if (cData.isSegmented) {
+            chunkCount = cData.chunkCount || 0;
+          }
+        }
+      } catch (snapErr) {
+        console.warn('Gagal membaca info chunk saat menghapus kitab:', snapErr);
+      }
+
+      const deleteOperations: Promise<any>[] = [];
+      deleteOperations.push(deleteDoc(doc(firestore, 'kitab_contents', targetId)));
+
+      if (chunkCount > 0) {
+        for (let i = 0; i < chunkCount; i++) {
+          deleteOperations.push(deleteDoc(doc(firestore, 'kitab_contents', `${targetId}_chunk_${i}`)));
+        }
+      }
+
+      try {
+        await Promise.all(deleteOperations);
       } catch (contentErr) {
-        console.warn('Gagal menghapus content kitab dari Cloud:', contentErr);
+        console.warn('Gagal menghapus content / chunk kitab dari Cloud:', contentErr);
       }
       onSuccess('Kitab berhasil dihapus dari repositori.');
     } catch (err: any) {

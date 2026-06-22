@@ -284,10 +284,31 @@ export default function KitabReader({
           const contentSnap = await getDoc(doc(firestore, 'kitab_contents', kitab.id));
           if (contentSnap.exists()) {
             const cData = contentSnap.data();
+            let finalPages: string[] = [];
+            let finalTextBody = '';
+
+            if (cData.isSegmented) {
+              const chunkCount = cData.chunkCount || 0;
+              const chunkPromises = [];
+              for (let i = 0; i < chunkCount; i++) {
+                chunkPromises.push(getDoc(doc(firestore, 'kitab_contents', `${kitab.id}_chunk_${i}`)));
+              }
+              const chunkSnaps = await Promise.all(chunkPromises);
+              for (const snap of chunkSnaps) {
+                if (snap.exists()) {
+                  finalPages = finalPages.concat(snap.data().pages || []);
+                }
+              }
+              finalTextBody = finalPages.join('\n\n');
+            } else {
+              finalPages = cData.pages || [];
+              finalTextBody = cData.textBody || '';
+            }
+
             const merged = {
               ...kitab,
-              pages: cData.pages || [],
-              textBody: cData.textBody || ''
+              pages: finalPages,
+              textBody: finalTextBody
             };
             setCurrentKitabData(merged);
             setLoadedFromLocal(false);
