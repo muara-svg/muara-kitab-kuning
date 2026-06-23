@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MapPin, Compass, Calendar, Sun, Moon, CloudSun, Sunset } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -8,17 +8,8 @@ interface HeaderProps {
   onOpenLocationSelector: () => void;
   onOpenPrayerTimesDetail: () => void;
   onChangeLocation?: (loc: { province: string; district: string; lat: number; lng: number }) => void;
+  onPrayerTimingsChange?: (timings: any, activeName: string) => void;
 }
-
-// Simulated coordinate fallback mapping for when the user selects other locations in the drawer
-const simulatedCoordinates: Record<string, { lat: number; lng: number }> = {
-  'Kecamatan Cisompet': { lat: -7.42, lng: 107.78 },
-  'Kecamatan Kebayoran Baru': { lat: -6.24, lng: 106.80 },
-  'Kecamatan Banyumas': { lat: -7.52, lng: 109.29 },
-  'Kecamatan Depok Sleman': { lat: -7.77, lng: 110.39 },
-  'Kecamatan Sukolilo Surabaya': { lat: -7.29, lng: 112.79 },
-  'Kecamatan Serpong Tangerang': { lat: -6.32, lng: 106.67 },
-};
 
 /**
  * Konversi penanggalan Masehi ke Hijriah secara astronomis / matematis
@@ -89,6 +80,7 @@ export default function Header({
   onOpenLocationSelector,
   onOpenPrayerTimesDetail,
   onChangeLocation,
+  onPrayerTimingsChange,
 }: HeaderProps) {
   // 1. STATE MANAGEMENT
   const [time, setTime] = useState(new Date());
@@ -97,6 +89,9 @@ export default function Header({
   );
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Ref to handle concurrent race condition for GPS reverse geocoding request cancels
+  const activeRequestRef = useRef<(() => void) | null>(null);
 
   // Menyimpan wilayah terdeteksi (baik dari GPS real maupun simulasi/prop)
   const [selectedProvince, setSelectedProvince] = useState(currentLocation.province);
@@ -120,31 +115,36 @@ export default function Header({
     return () => clearInterval(timer);
   }, []);
 
-  // 3. LISTEN & RESPOND TO MANUAL LOCATION SELECTION DRAWER
+  // 3. LISTEN & RESPOND TO MANUAL LOCATION SELECTION DRAWER (PROPS SYNC WITH COORDINATES VALIDATION)
   useEffect(() => {
-    if (currentLocation?.district) {
-      if (currentLocation.lat && currentLocation.lng) {
-        setCoordinates({ lat: currentLocation.lat, lng: currentLocation.lng });
-        setSelectedProvince(currentLocation.province);
-        setSelectedDistrict(currentLocation.district);
-      } else {
-        const simCoords = simulatedCoordinates[currentLocation.district];
-        if (simCoords) {
-          setCoordinates(simCoords);
-          setSelectedProvince(currentLocation.province);
-          setSelectedDistrict(currentLocation.district);
-        }
+    if (currentLocation && typeof currentLocation.lat === 'number' && typeof currentLocation.lng === 'number') {
+      // Manual selection overrides and cancels any active background GPS reverse geocoding session
+      if (activeRequestRef.current) {
+        activeRequestRef.current();
+        activeRequestRef.current = null;
       }
+      setCoordinates({ lat: currentLocation.lat, lng: currentLocation.lng });
+      setSelectedProvince(currentLocation.province);
+      setSelectedDistrict(currentLocation.district);
     }
   }, [currentLocation]);
 
   // 4. AUTO-TRIGGER GPS SCANNING ON COMPONENT MOUNT
   useEffect(() => {
     requestRealLocation();
+    return () => {
+      if (activeRequestRef.current) {
+        activeRequestRef.current();
+      }
+    };
   }, []);
 
-  // 5. GPS RETRIEVAL LOGIC (LOGIKA PENANGKAPAN LOKASI DETIL)
+  // 5. GPS RETRIEVAL LOGIC (LOGIKA PENANGKAPAN LOKASI DETIL DENGAN CEK RACE CONDITION)
   const requestRealLocation = () => {
+    if (activeRequestRef.current) {
+      activeRequestRef.current();
+    }
+
     setIsLoadingLocation(true);
     setLocationError(null);
 
@@ -155,8 +155,14 @@ export default function Header({
       return;
     }
 
+    let isCurrentRequest = true;
+    activeRequestRef.current = () => {
+      isCurrentRequest = false;
+    };
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        if (!isCurrentRequest) return;
         const { latitude, longitude } = position.coords;
         console.log(`[MUARA GPS] Sinyal koordinat terdeteksi: Lat ${latitude}, Lng ${longitude}`);
         
@@ -170,8 +176,11 @@ export default function Header({
           const geoUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=id`;
           const response = await fetch(geoUrl);
           
+          if (!isCurrentRequest) return;
+          
           if (response.ok) {
             const data = await response.json();
+            if (!isCurrentRequest) return;
             const address = data.address || {};
             
             // Mencari kandidat kecamatan dari bermacam parameter Nominatim
@@ -184,20 +193,23 @@ export default function Header({
         } catch (err) {
           console.warn("[MUARA GPS] Jaringan sibuk untuk Reverse Geocoding. Memakai template nama wilayah.", err);
         } finally {
-          setSelectedProvince(cleanProvince);
-          setSelectedDistrict(cleanDistrict);
-          if (onChangeLocation) {
-            onChangeLocation({
-              province: cleanProvince,
-              district: cleanDistrict,
-              lat: latitude,
-              lng: longitude
-            });
+          if (isCurrentRequest) {
+            setSelectedProvince(cleanProvince);
+            setSelectedDistrict(cleanDistrict);
+            if (onChangeLocation) {
+              onChangeLocation({
+                province: cleanProvince,
+                district: cleanDistrict,
+                lat: latitude,
+                lng: longitude
+              });
+            }
+            setIsLoadingLocation(false);
           }
-          setIsLoadingLocation(false);
         }
       },
       (error) => {
+        if (!isCurrentRequest) return;
         console.error("[MUARA GPS] Izin lokasi dibatasi atau GPS mati:", error);
         let verboseError = "Sinyal GPS gagal.";
         if (error.code === error.PERMISSION_DENIED) {
@@ -206,9 +218,9 @@ export default function Header({
         setLocationError(verboseError);
         setIsLoadingLocation(false);
         
-        // Memakai fallback jika GPS gagal (menggunakan default Jawa Barat / Cisompet)
+        // Memakai fallback jika GPS gagal (menggunakan default nasional Indonesia - DKI Jakarta)
         if (!coordinates) {
-          setCoordinates({ lat: -7.42, lng: 107.78 });
+          setCoordinates({ lat: -6.2088, lng: 106.8456 });
         }
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
@@ -329,6 +341,13 @@ export default function Header({
   };
 
   const { countdownText, activePrayerName } = calculateCountdownAndActive();
+
+  // Propagate prayer timings & active prayer status to parent
+  useEffect(() => {
+    if (onPrayerTimingsChange) {
+      onPrayerTimingsChange(prayerTimings, activePrayerName);
+    }
+  }, [prayerTimings, activePrayerName, onPrayerTimingsChange]);
 
   // FORMAT UTAMA JAM DIGITAL (hh:mm)
   const formatTimeStr = (t: Date) => {

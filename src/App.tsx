@@ -6,6 +6,7 @@ import AdminPanel from './components/AdminPanel';
 import Modal from './components/Modal';
 import SatuPintuAuth from './components/SatuPintuAuth';
 import SantriAI from './components/SantriAI';
+import PrayerTimesDetailModal from './components/PrayerTimesDetailModal';
 
 import { UserProfile, NotificationItem, SedekahCampaign } from './types';
 import { INITIAL_NOTIFICATIONS, INITIAL_SEDEKAH_CAMPAIGNS, MOCK_KITABS } from './data/mockData';
@@ -483,6 +484,16 @@ export default function App() {
   const [isPrayerTimesDetailOpen, setIsPrayerTimesDetailOpen] = useState(false);
   const [showStartPermissionsModal, setShowStartPermissionsModal] = useState(false);
 
+  // Local cache for prayer times & active prayer name from Header
+  const [prayerTimings, setPrayerTimings] = useState({
+    subuh: "04:34",
+    zuhur: "11:49",
+    asar: "15:13",
+    magrib: "17:41",
+    isya: "18:54"
+  });
+  const [activePrayerName, setActivePrayerName] = useState("Zuhur");
+
   // Compass rotation degrees simulator
   const [compassHeading, setCompassHeading] = useState(294.5); // Exact Qibla angle from Bandung
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
@@ -911,6 +922,10 @@ export default function App() {
         onOpenLocationSelector={() => setIsLocationSelectorOpen(true)}
         onOpenPrayerTimesDetail={() => setIsPrayerTimesDetailOpen(true)}
         onChangeLocation={(loc) => setCurrentLocation(loc)}
+        onPrayerTimingsChange={(timings, activeName) => {
+          setPrayerTimings(timings);
+          setActivePrayerName(activeName);
+        }}
       />
 
       {/* 2. DYNAMIC BROADCAST WARNING IF IMPORTED DATA HAS AN IMPORTANT FLAG */}
@@ -1235,66 +1250,15 @@ export default function App() {
         </div>
       </Modal>
 
-
       {/* ----------------- POPUP MODAL: PRAYER ADVANCED SCHEDULE ----------------- */}
-      <Modal
+      <PrayerTimesDetailModal
         isOpen={isPrayerTimesDetailOpen}
         onClose={() => setIsPrayerTimesDetailOpen(false)}
-        title={`Jadwal Shalat Lengkap - ${currentLocation.district}`}
-      >
-        <div className="space-y-5">
-          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-150 flex items-center gap-3.5 text-emerald-900">
-            <BookOpen className="h-5 w-5 text-emerald-600 shrink-0" />
-            <div>
-              <p className="font-bold text-xs">Akurasi GPS Tinggi</p>
-              <p className="text-[11px] mt-0.5 opacity-90 text-slate-600 leading-relaxed">
-                Jadwal diadaptasi mengikuti ketetapan Kementerian Agama Republik Indonesia (KEMENAG RI) zona {currentLocation.province}.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white border rounded-2xl overflow-hidden divide-y divide-slate-100 border-slate-150">
-            {[
-              { name: 'Imsak', val: '04:24', status: 'Selesai' },
-              { name: 'Subuh', val: '04:34', status: 'Selesai' },
-              { name: 'Syuruk', val: '05:50', status: 'Selesai' },
-              { name: 'Dhuha', val: '06:18', status: 'Selesai' },
-              { name: 'Zuhur', val: '11:49', status: 'Berlangsung', active: true },
-              { name: 'Asar', val: '15:13', status: 'Akan Datang' },
-              { name: 'Magrib', val: '17:41', status: 'Akan Datang' },
-              { name: 'Isya', val: '18:54', status: 'Akan Datang' }
-            ].map((sh, idx) => (
-              <div 
-                key={idx} 
-                className={`p-3.5 px-4 flex justify-between items-center text-xs font-mono ${
-                  sh.active ? 'bg-emerald-500/5 font-extrabold border-y border-emerald-500/10' : ''
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${
-                    sh.active ? 'bg-emerald-600 animate-ping' : 'bg-slate-300'
-                  }`} />
-                  <span className={`font-sans ${sh.active ? 'text-emerald-800' : 'text-slate-700'}`}>{sh.name}</span>
-                </div>
-                
-                <div className="flex items-center gap-4">
-                  <span className={`${sh.active ? 'text-emerald-700 font-extrabold text-sm' : 'text-slate-800'}`}>{sh.val}</span>
-                  <span className={`text-[10px] font-sans px-2 py-0.5 rounded-full ${
-                    sh.active ? 'bg-emerald-500/20 text-emerald-800' :
-                    sh.status === 'Selesai' ? 'bg-slate-100 text-slate-400' : 'bg-amber-50 text-amber-600'
-                  }`}>
-                    {sh.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl text-center text-[10px] text-slate-400">
-            Jadwal diperbaharui otomatis harian berdasarkan perhitungan lintang astronomi bumi.
-          </div>
-        </div>
-      </Modal>
+        district={currentLocation.district}
+        province={currentLocation.province}
+        prayerTimings={prayerTimings}
+        activePrayerName={activePrayerName}
+      />
 
       {/* ----------------- POPUP MODAL: STARTUP PERMISSIONS ----------------- */}
       <AnimatePresence>
