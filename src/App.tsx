@@ -61,12 +61,12 @@ export default function App() {
     // 1. If we are running in a standard Web Webview/Browser (NOT Capacitor, NOT localhost)
     // we automatically propagate our parent origin to Firestore under app_configs/api_server.
     const isLocalhost = typeof window !== 'undefined' && (
-      window.location.hostname === 'localhost' || 
+      window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1'
     );
-    const isWebMode = typeof window !== 'undefined' && 
-      ! (window as any).Capacizer && 
-      window.location.protocol.startsWith('http') && 
+    const isWebMode = typeof window !== 'undefined' &&
+      !(window as any).Capacizer &&
+      window.location.protocol.startsWith('http') &&
       !isLocalhost;
 
     if (isWebMode) {
@@ -102,7 +102,7 @@ export default function App() {
   useEffect(() => {
     if (userProfile.isLoggedIn && userProfile.id) {
       const userDocRef = doc(firestore, 'users', userProfile.id);
-      
+
       const unsubscribe = onSnapshot(userDocRef, async (userSnap) => {
         try {
           if (userSnap.exists()) {
@@ -114,7 +114,7 @@ export default function App() {
             const avatarVal = data.avatarUrl || userProfile.avatarUrl;
             const bioVal = data.bio || userProfile.bio;
             const phoneVal = data.phone || userProfile.phone || '';
-            
+
             // Automated Package Expiration logic
             if (isPremiumVal && expiresAtValue && expiresAtValue !== 'Unlimited' && expiresAtValue !== 'Selamanya' && expiresAtValue !== 'unlimitid') {
               const expiryDate = new Date(expiresAtValue);
@@ -131,19 +131,19 @@ export default function App() {
             }
 
             const updatedStatus = isPremiumVal ? 'Premium Verified' : 'Gratis';
-            
+
             setUserProfile((prev) => {
               // Update local storage session too so it stays persistent
               const session = getSessionUser();
               if (session) {
-                const isSessionStale = 
-                  session.isPremium !== isPremiumVal || 
-                  session.role !== roleVal || 
-                  session.name !== nameVal || 
+                const isSessionStale =
+                  session.isPremium !== isPremiumVal ||
+                  session.role !== roleVal ||
+                  session.name !== nameVal ||
                   session.avatarUrl !== avatarVal ||
                   session.phone !== phoneVal ||
                   session.bio !== bioVal;
-                  
+
                 if (isSessionStale) {
                   storeSessionUser({
                     ...session,
@@ -156,11 +156,11 @@ export default function App() {
                   });
                 }
               }
-              
+
               if (
-                prev.membershipStatus !== updatedStatus || 
-                prev.expiresAt !== expiresAtValue || 
-                prev.name !== nameVal || 
+                prev.membershipStatus !== updatedStatus ||
+                prev.expiresAt !== expiresAtValue ||
+                prev.name !== nameVal ||
                 prev.avatarUrl !== avatarVal ||
                 prev.phone !== phoneVal ||
                 prev.bio !== bioVal ||
@@ -211,7 +211,7 @@ export default function App() {
       }
 
       const mergedMap = new Map<string, any>();
-      
+
       [...localCamps, ...cloudCamps].forEach((camp) => {
         if (camp && camp.id) {
           mergedMap.set(camp.id, {
@@ -307,10 +307,10 @@ export default function App() {
             if (!isNaN(parsed)) notifTime = parsed;
           }
           if (notifTime === 0) return true; // Biarkan jika tidak ada timestamp penanda
-          
+
           // Clear if cleared by bulk delete
           if (notifTime <= notificationsLastClearedAt) return false;
-          
+
           return (now - notifTime) <= cutoffTimeMs;
         });
 
@@ -324,7 +324,7 @@ export default function App() {
 
       // Merge cloud and local
       const mergedMap = new Map<string, any>();
-      
+
       // Seed combined list, mengeliminasi yang melebihi batas jam atau terhapus secara massal dari cloud maupun lokal
       [...cloudNotifs, ...localNotifs].forEach((notif) => {
         if (notif && notif.id) {
@@ -607,7 +607,7 @@ export default function App() {
   const downloadAndCacheAllKitabs = async () => {
     try {
       console.log("[MUARA] Memulai pengunduhan seluruh kitab untuk akses offline...");
-      
+
       // 1. Caching MOCK_KITABS
       for (const k of MOCK_KITABS) {
         const isSaved = await indexedDbService.isSaved(k.id);
@@ -674,7 +674,7 @@ export default function App() {
     const handleOrientation = (e: DeviceOrientationEvent) => {
       // webkitCompassHeading is supported on iOS Safari
       let heading = (e as any).webkitCompassHeading;
-      
+
       if (heading === undefined) {
         if (e.alpha !== null) {
           // alpha goes 0 to 360 counter-clockwise. To make it clockwise:
@@ -774,7 +774,7 @@ export default function App() {
           status: 'Pending',
           createdAt: new Date().toISOString(),
         });
-        
+
         // Also save user profile as having requested
         setUserProfile((prev) => ({
           ...prev,
@@ -914,7 +914,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white max-w-[768px] mx-auto shadow-2xl relative border-x border-slate-205">
-      
+
       {/* 1. HEADER SECTION (with active prayer schedule widgets) */}
       <Header
         currentLocation={currentLocation}
@@ -935,7 +935,7 @@ export default function App() {
             <span className="p-1 px-1.5 rounded-md bg-red-500 text-white font-mono text-[9px]">PENTING</span>
             <span>{notifications.find(n => n.important)?.title}</span>
           </div>
-          <button 
+          <button
             onClick={() => {
               const notifBtn = document.getElementById('menu-btn-notifications');
               if (notifBtn) notifBtn.click();
@@ -997,17 +997,17 @@ export default function App() {
               currentUser={
                 userProfile.isLoggedIn
                   ? {
-                      uid: userProfile.id,
-                      name: userProfile.name,
-                      email: userProfile.email,
-                      phone: userProfile.phone,
-                      bio: userProfile.bio,
-                      avatarUrl: userProfile.avatarUrl,
-                      role: userProfile.role || 'user',
-                      isPremium: userProfile.membershipStatus === 'Premium Verified',
-                      createdAt: new Date().toISOString(),
-                      isLoggedIn: true
-                    }
+                    uid: userProfile.id,
+                    name: userProfile.name,
+                    email: userProfile.email,
+                    phone: userProfile.phone,
+                    bio: userProfile.bio,
+                    avatarUrl: userProfile.avatarUrl,
+                    role: userProfile.role || 'user',
+                    isPremium: userProfile.membershipStatus === 'Premium Verified',
+                    createdAt: new Date().toISOString(),
+                    isLoggedIn: true
+                  }
                   : null
               }
               onAuthSuccess={handleAuthSuccess}
@@ -1034,7 +1034,7 @@ export default function App() {
                       <p className="text-[11px] text-slate-400 mt-0.5">Sesi Terenkripsi • Role: Administrator Aktif</p>
                     </div>
                   </div>
-                  
+
                   <button
                     onClick={() => setCurrentTab('beranda')}
                     className="text-xs bg-white text-slate-700 hover:text-emerald-800 border px-3 py-1.5 rounded-lg font-bold shadow-xs transition-all cursor-pointer"
@@ -1097,13 +1097,12 @@ export default function App() {
           </p>
 
           {/* Compass Graphic Wheel */}
-          <div className={`relative mx-auto h-56 w-56 rounded-full border-4 flex items-center justify-center p-3 shadow-inner transition-all duration-300 ${
-            Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
-              ? 'ring-4 ring-emerald-500 ring-offset-2 shadow-[0_0_25px_rgba(16,185,129,0.45)] border-emerald-500 bg-emerald-50/50' 
+          <div className={`relative mx-auto h-56 w-56 rounded-full border-4 flex items-center justify-center p-3 shadow-inner transition-all duration-300 ${Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
+              ? 'ring-4 ring-emerald-500 ring-offset-2 shadow-[0_0_25px_rgba(16,185,129,0.45)] border-emerald-500 bg-emerald-50/50'
               : 'border-emerald-800/10 bg-[#eefdf4]/40'
-          }`}>
+            }`}>
             <div className="absolute inset-0 rounded-full border border-dashed border-emerald-500/20" />
-            
+
             {/* Rotating Compass Rose containing Cardinal Directions (North U, South S, East T, West B) */}
             <motion.div
               className="absolute inset-0 flex items-center justify-center pointer-events-none"
@@ -1116,7 +1115,7 @@ export default function App() {
               <span className="absolute bottom-3 font-mono text-xs font-black text-slate-500">S</span>
               <span className="absolute right-3 font-mono text-xs font-black text-slate-500">T</span>
               <span className="absolute left-3 font-mono text-xs font-black text-slate-500">B</span>
-              
+
               <div className="h-0.5 w-[85%] bg-slate-350/20 absolute" />
               <div className="w-0.5 h-[85%] bg-slate-350/20 absolute" />
             </motion.div>
@@ -1130,16 +1129,14 @@ export default function App() {
             >
               {/* Islamic Qibla Star Indicator Icon */}
               <div className="absolute top-0 flex flex-col items-center">
-                <Compass className={`h-6 w-6 text-amber-500 animate-pulse ${
-                  Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
-                    ? 'scale-115 text-emerald-650' 
+                <Compass className={`h-6 w-6 text-amber-500 animate-pulse ${Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
+                    ? 'scale-115 text-emerald-650'
                     : ''
-                }`} />
-                <span className={`text-[8px] font-black uppercase tracking-widest font-mono mt-0.5 ${
-                  Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
-                    ? 'text-emerald-700' 
+                  }`} />
+                <span className={`text-[8px] font-black uppercase tracking-widest font-mono mt-0.5 ${Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
+                    ? 'text-emerald-700'
                     : 'text-amber-600'
-                }`}>KIBLAT</span>
+                  }`}>KIBLAT</span>
               </div>
 
               {/* Standard needle lines */}
@@ -1229,11 +1226,10 @@ export default function App() {
                     // Mock update compass bearing slightly based on location select index
                     setCompassHeading(291 + i * 2);
                   }}
-                  className={`w-full p-4 rounded-xl text-left border flex justify-between items-center transition-colors ${
-                    isSelected
+                  className={`w-full p-4 rounded-xl text-left border flex justify-between items-center transition-colors ${isSelected
                       ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold'
                       : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-750'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <MapPin className={`h-4.5 w-4.5 ${isSelected ? 'text-emerald-600' : 'text-slate-400'}`} />
@@ -1264,7 +1260,7 @@ export default function App() {
       <AnimatePresence>
         {showStartPermissionsModal && (
           <div className="fixed inset-0 z-55 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -1324,25 +1320,32 @@ export default function App() {
                     localStorage.setItem('muara_permissions_asked', 'true');
                     localStorage.setItem('muara_storage_permission_granted', 'true');
                     setShowStartPermissionsModal(false);
-                    
+
                     // =========================================================================
-                    // 🛡️ SUNTIKAN INTEGRATION: MEMINTA IZIN NOTIFIKASI NATIVE CAPACITOR UNTUK AZAN
+                    // 🛡️ SUNTIKAN INTEGRATION: MEMINTA IZIN NOTIFIKASI NATIVE CAPACITOR (ANTI-BLANK WEB)
                     // =========================================================================
                     try {
-                      const { LocalNotifications } = await import('@capacitor/local-notifications');
-                      const checkPerm = await LocalNotifications.checkPermissions();
-                      
-                      if (checkPerm.display !== 'granted') {
-                        const reqPerm = await LocalNotifications.requestPermissions();
-                        if (reqPerm.display === 'granted') {
-                          console.log('[MUARA PERMISSION] Izin Notifikasi Native Android Diberikan!');
+                      // Cek secara aman apakah aplikasi berjalan sebagai aplikasi HP native, bukan browser web biasa
+                      const isNative = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
+
+                      if (isNative) {
+                        const { LocalNotifications } = await import('@capacitor/local-notifications');
+                        const checkPerm = await LocalNotifications.checkPermissions();
+
+                        if (checkPerm.display !== 'granted') {
+                          const reqPerm = await LocalNotifications.requestPermissions();
+                          if (reqPerm.display === 'granted') {
+                            console.log('[MUARA PERMISSION] Izin Notifikasi Native Android Diberikan!');
+                            localStorage.setItem('muara_azan_permission_granted', 'true');
+                          }
+                        } else {
                           localStorage.setItem('muara_azan_permission_granted', 'true');
                         }
                       } else {
-                        localStorage.setItem('muara_azan_permission_granted', 'true');
+                        console.log('[MUARA Web Environment] Bypassing native notifications check (Aman dari blank putih).');
                       }
                     } catch (notificationErr) {
-                      console.log('[MUARA Web Fallback] Gagal memuat LocalNotifications (Berjalan di Web Browser biasa):', notificationErr);
+                      console.log('[MUARA Web Fallback Error] Gagal memuat LocalNotifications:', notificationErr);
                     }
                     // =========================================================================
 
@@ -1360,7 +1363,7 @@ export default function App() {
                               const rawDistrict = address.suburb || address.village || address.city_district || address.town || address.county || address.municipality || 'Cisompet';
                               const cleanDistrict = rawDistrict.startsWith('Kecamatan') ? rawDistrict : `Kecamatan ${rawDistrict}`;
                               const cleanProvince = address.state || address.region || 'Jawa Barat';
-                              
+
                               setCurrentLocation({
                                 province: cleanProvince,
                                 district: cleanDistrict,
@@ -1407,11 +1410,11 @@ export default function App() {
       </AnimatePresence>
 
       {/* FLOATING PINTER ASSISTANT FITUR SANTRI AI */}
-      <SantriAI 
-        userProfile={userProfile} 
+      <SantriAI
+        userProfile={userProfile}
         onOpenUpgradeModal={() => {
           window.dispatchEvent(new CustomEvent('muara-open-membership'));
-        }} 
+        }}
       />
 
     </div>
@@ -1421,10 +1424,10 @@ export default function App() {
 // Simple loader inline component
 function Loader2({ className }: { className?: string }) {
   return (
-    <svg 
-      className={`animate-spin ${className}`} 
-      xmlns="http://www.w3.org/2000/svg" 
-      fill="none" 
+    <svg
+      className={`animate-spin ${className}`}
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
       viewBox="0 0 24 24"
     >
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
