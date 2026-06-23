@@ -10,7 +10,7 @@ import PrayerTimesDetailModal from './components/PrayerTimesDetailModal';
 
 import { UserProfile, NotificationItem, SedekahCampaign } from './types';
 import { INITIAL_NOTIFICATIONS, INITIAL_SEDEKAH_CAMPAIGNS, MOCK_KITABS } from './data/mockData';
-import { Compass, HelpCircle, MapPin, Check, Sparkles, BookOpen, ShieldAlert, LogOut, Settings, ArrowLeft } from 'lucide-react';
+import { Compass, HelpCircle, MapPin, Check, Sparkles, BookOpen, ShieldAlert, LogOut, Settings, ArrowLeft, BellRing } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSessionUser, clearSessionUser, storeSessionUser } from './lib/authService';
 import { doc, setDoc, getDoc, updateDoc, onSnapshot, collection, getDocs } from 'firebase/firestore';
@@ -1217,7 +1217,7 @@ export default function App() {
           </p>
 
           <div className="grid grid-cols-1 gap-2.5">
-            {indonesianLocations.map((loc, i) => {
+            indonesianLocations.map((loc, i) => {
               const isSelected = currentLocation.district === loc.district;
               return (
                 <button
@@ -1245,7 +1245,7 @@ export default function App() {
                   {isSelected && <Check className="h-4.5 w-4.5 text-emerald-600" />}
                 </button>
               );
-            })}
+            })
           </div>
         </div>
       </Modal>
@@ -1304,6 +1304,17 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+
+                {/* 3. Izin Alarm Notifikasi Audio Azan */}
+                <div className="flex gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-150 text-[10px] sm:text-xs">
+                  <BellRing className="h-4.5 w-4.5 text-emerald-600 shrink-0 mt-0.5 animate-bounce" />
+                  <div>
+                    <span className="block font-bold text-slate-800">Alarm Audio Azan Otomatis</span>
+                    <span className="text-[9px] text-slate-500 block mt-0.5 leading-snug">
+                      Mengizinkan interetensi sistem operasi agar mampu mengumandangkan suara Azan secara penuh tepat waktu saat memasuki waktu shalat fardhu.
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div className="pt-2 flex flex-col gap-2 font-sans">
@@ -1314,6 +1325,27 @@ export default function App() {
                     localStorage.setItem('muara_storage_permission_granted', 'true');
                     setShowStartPermissionsModal(false);
                     
+                    // =========================================================================
+                    // 🛡️ SUNTIKAN INTEGRATION: MEMINTA IZIN NOTIFIKASI NATIVE CAPACITOR UNTUK AZAN
+                    // =========================================================================
+                    try {
+                      const { LocalNotifications } = await import('@capacitor/local-notifications');
+                      const checkPerm = await LocalNotifications.checkPermissions();
+                      
+                      if (checkPerm.display !== 'granted') {
+                        const reqPerm = await LocalNotifications.requestPermissions();
+                        if (reqPerm.display === 'granted') {
+                          console.log('[MUARA PERMISSION] Izin Notifikasi Native Android Diberikan!');
+                          localStorage.setItem('muara_azan_permission_granted', 'true');
+                        }
+                      } else {
+                        localStorage.setItem('muara_azan_permission_granted', 'true');
+                      }
+                    } catch (notificationErr) {
+                      console.log('[MUARA Web Fallback] Gagal memuat LocalNotifications (Berjalan di Web Browser biasa):', notificationErr);
+                    }
+                    // =========================================================================
+
                     // Request GPS location
                     if (navigator.geolocation) {
                       navigator.geolocation.getCurrentPosition(
@@ -1383,5 +1415,20 @@ export default function App() {
       />
 
     </div>
+  );
+}
+
+// Simple loader inline component
+function Loader2({ className }: { className?: string }) {
+  return (
+    <svg 
+      className={`animate-spin ${className}`} 
+      xmlns="http://www.w3.org/2000/svg" 
+      fill="none" 
+      viewBox="0 0 24 24"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
   );
 }
