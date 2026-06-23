@@ -101,8 +101,17 @@ export default defineConfig(() => {
         external: [
           '@capacitor/local-notifications',
           '@capacitor/app',
-          '@capacitor/android'
-        ]
+          '@capacitor/android',
+          '@capacitor/core'
+        ],
+        output: {
+          globals: {
+            '@capacitor/local-notifications': 'window.CapacitorLocalNotifications || {}',
+            '@capacitor/app': 'window.CapacitorApp || {}',
+            '@capacitor/android': 'window.CapacitorAndroid || {}',
+            '@capacitor/core': 'window.CapacitorCore || {}'
+          }
+        }
       }
     },
     // =========================================================================
