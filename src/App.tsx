@@ -65,7 +65,7 @@ export default function App() {
       window.location.hostname === '127.0.0.1'
     );
     const isWebMode = typeof window !== 'undefined' && 
-      ! (window as any).Capacitor && 
+      ! (window as any).Capacizer && 
       window.location.protocol.startsWith('http') && 
       !isLocalhost;
 
@@ -1217,7 +1217,7 @@ export default function App() {
           </p>
 
           <div className="grid grid-cols-1 gap-2.5">
-            indonesianLocations.map((loc, i) => {
+            {indonesianLocations.map((loc, i) => {
               const isSelected = currentLocation.district === loc.district;
               return (
                 <button
@@ -1245,7 +1245,7 @@ export default function App() {
                   {isSelected && <Check className="h-4.5 w-4.5 text-emerald-600" />}
                 </button>
               );
-            })
+            })}
           </div>
         </div>
       </Modal>
