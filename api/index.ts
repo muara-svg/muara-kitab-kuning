@@ -1,49 +1,259 @@
 import express from "express";
-import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import cors from "cors";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+import zlib from "zlib";
+import firebaseConfigData from "../firebase-applet-config.json";
 
 dotenv.config();
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
 
-  // Configure CORS middleware to enable Capacitor access
-  app.use(cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
-  }));
+// Configure CORS middleware to enable Capacitor access
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
+}));
 
-  // Configure body parsers
-  app.use(express.json());
+// Configure body parsers (increase limit for handling large plain text payloads before compression)
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // API route for Santri AI
-  app.post("/api/gemini/santri-ai", async (req, res) => {
-    try {
-      const { prompt, history, latestKitabTitles } = req.body;
+// Initialize Firebase in backend
+const firebaseConfig = {
+  apiKey: process.env.VITE_FIREBASE_API_KEY || firebaseConfigData.apiKey,
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigData.authDomain,
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID || firebaseConfigData.projectId,
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigData.storageBucket,
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigData.messagingSenderId,
+  appId: process.env.VITE_FIREBASE_APP_ID || firebaseConfigData.appId,
+};
+
+const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+const customDbId = process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID;
+const activeDbId = customDbId !== undefined 
+  ? (customDbId === "(default)" ? undefined : customDbId) 
+  : (process.env.VITE_FIREBASE_PROJECT_ID ? undefined : firebaseConfigData.firestoreDatabaseId);
+
+const firestoreDb = getFirestore(firebaseApp, activeDbId);
+
+// Cloudinary configuration constants
+const CLOUDINARY_CLOUD_NAME = process.env.VITE_CLOUDINARY_CLOUD_NAME || "dndjgplpm";
+const CLOUDINARY_UPLOAD_PRESET = process.env.VITE_CLOUDINARY_UPLOAD_PRESET || "MUARA_";
+
+// Compression & Decompression helpers using standard zlib
+const compressData = (text: string): Promise<Buffer> => {
+  return new Promise((resolve, reject) => {
+    zlib.gzip(Buffer.from(text, 'utf-8'), (err, buffer) => {
+      if (err) reject(err);
+      else resolve(buffer);
+    });
+  });
+};
+
+const decompressData = (buffer: Buffer): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    zlib.gunzip(buffer, (err, decompressed) => {
+      if (err) reject(err);
+      else resolve(decompressed.toString('utf-8'));
+    });
+  });
+};
+
+// POST / PUT endpoint to save Kitab content (compresses if large)
+app.post("/api/kitab-contents", async (req, res) => {
+  try {
+    const { id, textBody, pages, ...rest } = req.body;
+    
+    if (!id) {
+      return res.status(400).json({ error: "Kitab ID as parameter is required." });
+    }
+
+    const docRef = doc(firestoreDb, "kitab_contents", id);
+    const textToCompress = textBody || "";
+    const sizeInBytes = Buffer.byteLength(textToCompress, 'utf8');
+
+    // Threshold: Any text body larger than 300,000 bytes (approx 300 KB) triggers Cloudinary gzip storage
+    if (sizeInBytes > 300000) {
+      console.log(`[Backend Storage] Kitab ${id} exceeds size limit (${sizeInBytes} bytes). Compressing and uploading package to Cloudinary...`);
       
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
-        return res.status(500).json({ 
-          error: "Sistem asisten belum terkonfigurasi secara lengkap. Kunci `GEMINI_API_KEY` belum disetel di bagian Settings > Secrets di AI Studio." 
-        });
-      }
+      // Package both textBody and pages list to avoid Firestore size limit entirely
+      const payloadString = JSON.stringify({
+        textBody: textToCompress,
+        pages: pages || []
+      });
+      
+      const compressedBuffer = await compressData(payloadString);
+      
+      // Upload via unsigned raw preset to Cloudinary
+      const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`;
+      const blob = new Blob([compressedBuffer], { type: 'application/gzip' });
+      const formData = new FormData();
+      formData.append('file', blob, `${id}_contents.txt.gz`);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+      formData.append('folder', 'muara_kitab_gzips');
 
-      // Initialize the official @google/genai SDK on the server according to guidelines
-      const ai = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
+      const clResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData
       });
 
-      let systemInstruction = `Kamu adalah 'Santri AI', asisten digital rujukan Kitab Kuning ahli fiqih, tasawuf, akidah, hadis, dll dari aplikasi MUARA. Tugasmu adalah mendampingi penelitian keagamaan pengguna, menjawab pertanyaan secara santun, ilmiah, berakhlak mulia, dan berbasis kitab kuning.
+      if (!clResponse.ok) {
+        const clErrText = await clResponse.text();
+        console.error("[Cloudinary Raw Upload Error]:", clErrText);
+        throw new Error(`Cloudinary raw file upload failed with status ${clResponse.status}: ${clErrText}`);
+      }
+
+      const clJson = await clResponse.json();
+      const secureUrl = clJson.secure_url;
+
+      if (!secureUrl) {
+        throw new Error("Cloudinary upload did not return a valid secure URL.");
+      }
+
+      // Save slim doc to Firestore - keeping textBody & pages EMPTY to prevent 1MB limit error
+      const contentPayload = {
+        id,
+        isSegmented: false,
+        chunkCount: 0,
+        cloudinaryUrl: secureUrl,
+        textBody: "", // Keep empty
+        pages: [],     // Keep empty
+        updatedAt: new Date().toISOString(),
+        ...rest
+      };
+
+      await setDoc(docRef, contentPayload, { merge: true });
+      return res.json({ success: true, cloudinaryUrl: secureUrl });
+
+    } else {
+      // Small text content: Store in Firestore directly for standard capability
+      console.log(`[Backend Storage] Kitab ${id} is under threshold size (${sizeInBytes} bytes). Storing directly in Firestore.`);
+      
+      const contentPayload = {
+        id,
+        isSegmented: false,
+        chunkCount: 0,
+        textBody: textToCompress,
+        pages: pages || [],
+        updatedAt: new Date().toISOString(),
+        ...rest
+      };
+
+      await setDoc(docRef, contentPayload, { merge: true });
+      return res.json({ success: true });
+    }
+
+  } catch (err: any) {
+    console.error("[Backend Storage POST Error]:", err);
+    res.status(500).json({ error: err.message || "Failed to save kitab content via backend" });
+  }
+});
+
+// GET endpoint to fetch Kitab content (downloads & decompresses from Cloudinary if needed)
+app.get("/api/kitab-contents/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: "Kitab ID is required" });
+    }
+
+    const docRef = doc(firestoreDb, "kitab_contents", id);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      return res.status(404).json({ error: "Kitab content document does not exist." });
+    }
+
+    const data = docSnap.data();
+    if (data.cloudinaryUrl) {
+      console.log(`[Backend Storage] Found Cloudinary URL for ${id}. Downloading compressed package...`);
+      
+      const clResponse = await fetch(data.cloudinaryUrl);
+      if (!clResponse.ok) {
+        throw new Error(`Failed to download book zip package: HTTP ${clResponse.status}`);
+      }
+
+      const compressedBuffer = Buffer.from(await clResponse.arrayBuffer());
+      const decompressedText = await decompressData(compressedBuffer);
+
+      let textBody = "";
+      let pages: string[] = [];
+
+      try {
+        const parsed = JSON.parse(decompressedText);
+        if (parsed && typeof parsed === 'object') {
+          textBody = parsed.textBody || "";
+          pages = parsed.pages || [];
+        } else {
+          textBody = decompressedText;
+        }
+      } catch (jsonErr) {
+        textBody = decompressedText;
+      }
+
+      const finalResponse = {
+        ...data,
+        textBody,
+        pages: pages.length > 0 ? pages : (data.pages || [])
+      };
+
+      return res.json(finalResponse);
+    }
+
+    // Direct Firestore payload
+    res.json(data);
+
+  } catch (err: any) {
+    console.error("[Backend Storage GET Error]:", err);
+    res.status(500).json({ error: err.message || "Failed to retrieve and process book content" });
+  }
+});
+
+// DELETE endpoint to clear Kitab content
+app.delete("/api/kitab-contents/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: "Kitab ID is required" });
+    }
+
+    const docRef = doc(firestoreDb, "kitab_contents", id);
+    await deleteDoc(docRef);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Backend Storage DELETE Error]:", err);
+    res.status(500).json({ error: err.message || "Failed to delete kitab content from Server" });
+  }
+});
+
+// API route for Santri AI
+app.post("/api/gemini/santri-ai", async (req, res) => {
+  try {
+    const { prompt, history, latestKitabTitles } = req.body;
+    
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+      return res.status(500).json({ 
+        error: "Sistem asisten belum terkonfigurasi secara lengkap. Kunci `GEMINI_API_KEY` belum disetel di bagian Environment Variables di Vercel." 
+      });
+    }
+
+    // Initialize the official @google/genai SDK on the server according to guidelines
+    const ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    let systemInstruction = `Kamu adalah 'Santri AI', asisten digital rujukan Kitab Kuning ahli fiqih, tasawuf, akidah, hadis, dll dari aplikasi MUARA. Tugasmu adalah mendampingi penelitian keagamaan pengguna, menjawab pertanyaan secara santun, ilmiah, berakhlak mulia, dan berbasis kitab kuning.
 
 --- TATA TERTIB & STRUKTUR BALASAN ---
 1. MENULIS BERBAGAI SISI PANDANGAN KITAB:
@@ -80,72 +290,49 @@ Pahamilah gaya bahasa santri sehari-hari, bahasa gaul anak muda Indonesia, singk
 --- ATURAN SALAM (GREETING WORDS) ---
 Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussalam wr. wb") HANYA boleh diucapkan di sesi pembuka awal percakapan saja (salam sambutan bawaan aplikasi). Untuk setiap jawaban/giliran obrolan selanjutnya dalam riwayat chat (chat history), kamu DILARANG KERAS mengucapkan, menuliskan, atau mengulang lafadz salam tersebut lagi agar jalannya percakapan terasa terus mengalir hangat, efisien, dan santun tanpa pengulangan salam yang berlebihan.`;
 
-      if (latestKitabTitles && Array.isArray(latestKitabTitles) && latestKitabTitles.length > 0) {
-        systemInstruction += `\n\n--- KITAB SAAT INI YANG TERSEDIA DI APLIKASI MUARA (Update Dinamis) ---\nDaftar kitab kuning: ${latestKitabTitles.join(', ')}.`;
-      }
-
-      // Structure contents. If history is supplied, build the dialogue structure.
-      const contentsParts: any[] = [];
-      if (history && Array.isArray(history)) {
-        history.forEach((msg: { role: 'user' | 'model'; parts: { text: string }[] }) => {
-          contentsParts.push({
-            role: msg.role === 'model' ? 'model' : 'user',
-            parts: [{ text: msg.parts[0].text }]
-          });
-        });
-      }
-      
-      // Append current prompt/query
-      contentsParts.push({
-        role: "user",
-        parts: [{ text: prompt }]
-      });
-
-      // Menggunakan tipe model yang valid dan stabil dari Google AI Studio ('gemini-2.5-flash')
-      const result = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: contentsParts,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.3,
-        }
-      });
-
-      const replyText = result.text || "Terjadi kesalahan dalam memberikan respon.";
-      res.json({ text: replyText });
-    } catch (err: any) {
-      console.error("[Santri AI Server Error]:", err);
-      const errMsg = err.message || "";
-      
-      // Mengamankan respon fallback JSON agar tidak crash meledak di frontend pembaca
-      if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
-        return res.status(503).json({ 
-          error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
-        });
-      }
-      res.status(500).json({ error: "Gagal berkomunikasi dengan Santri AI. Pastikan GEMINI_API_KEY Anda sudah benar." });
+    if (latestKitabTitles && Array.isArray(latestKitabTitles) && latestKitabTitles.length > 0) {
+      systemInstruction += `\n\n--- KITAB SAAT INI YANG TERSEDIA DI APLIKASI MUARA (Update Dinamis) ---\nDaftar kitab kuning: ${latestKitabTitles.join(', ')}.`;
     }
-  });
 
-  // Vite integration middleware
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+    // Structure contents. If history is supplied, build the dialogue structure.
+    const contentsParts: any[] = [];
+    if (history && Array.isArray(history)) {
+      history.forEach((msg: { role: 'user' | 'model'; parts: { text: string }[] }) => {
+        contentsParts.push({
+          role: msg.role === 'model' ? 'model' : 'user',
+          parts: [{ text: msg.parts[0].text }]
+        });
+      });
+    }
+    
+    // Append current prompt/query
+    contentsParts.push({
+      role: "user",
+      parts: [{ text: prompt }]
     });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+
+    // Generate response using gemini-3.5-flash as the recommended model
+    const result = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: contentsParts,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.3,
+      }
     });
+
+    const replyText = result.text || "Terjadi kesalahan dalam memberikan respon.";
+    res.json({ text: replyText });
+  } catch (err: any) {
+    console.error("[Santri AI Server Error]:", err);
+    const errMsg = err.message || "";
+    if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
+      return res.status(503).json({ 
+        error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
+      });
+    }
+    res.status(500).json({ error: errMsg || "Gagal berkomunikasi dengan Santri AI" });
   }
+});
 
-  // Bind to port 3000 and 0.0.0.0
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[MUARA Server] Server is actively listening on http://localhost:${PORT}`);
-  });
-}
-
-startServer();
+export default app;

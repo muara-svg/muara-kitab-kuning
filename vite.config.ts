@@ -7,6 +7,20 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(() => {
   return {
     plugins: [
+      {
+        name: 'firestore-interceptor',
+        resolveId(source, importer) {
+          if (
+            source === 'firebase/firestore' && 
+            importer && 
+            !importer.includes('customFirestore.ts') && 
+            !importer.includes('firebaseConfig.ts')
+          ) {
+            return path.resolve(__dirname, 'src/lib/customFirestore.ts');
+          }
+          return null;
+        }
+      },
       react(), 
       tailwindcss(),
       // Konfigurasi Sistem Service Worker PWA agar terintegrasi sempurna di WebView Capacitor
