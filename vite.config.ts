@@ -93,6 +93,19 @@ export default defineConfig(() => {
         }
       })
     ],
+    // =========================================================================
+    // 🛡️ SUNTIKAN INTEGRATION: MENGECUALIKAN MODUL NATIVE HP DI LINGKUNGAN CLOUD WEB (VERCEL)
+    // =========================================================================
+    build: {
+      rollupOptions: {
+        external: [
+          '@capacitor/local-notifications',
+          '@capacitor/app',
+          '@capacitor/android'
+        ]
+      }
+    },
+    // =========================================================================
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
