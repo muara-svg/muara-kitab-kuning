@@ -1098,8 +1098,8 @@ export default function App() {
 
           {/* Compass Graphic Wheel */}
           <div className={`relative mx-auto h-56 w-56 rounded-full border-4 flex items-center justify-center p-3 shadow-inner transition-all duration-300 ${Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
-              ? 'ring-4 ring-emerald-500 ring-offset-2 shadow-[0_0_25px_rgba(16,185,129,0.45)] border-emerald-500 bg-emerald-50/50'
-              : 'border-emerald-800/10 bg-[#eefdf4]/40'
+            ? 'ring-4 ring-emerald-500 ring-offset-2 shadow-[0_0_25px_rgba(16,185,129,0.45)] border-emerald-500 bg-emerald-50/50'
+            : 'border-emerald-800/10 bg-[#eefdf4]/40'
             }`}>
             <div className="absolute inset-0 rounded-full border border-dashed border-emerald-500/20" />
 
@@ -1130,12 +1130,12 @@ export default function App() {
               {/* Islamic Qibla Star Indicator Icon */}
               <div className="absolute top-0 flex flex-col items-center">
                 <Compass className={`h-6 w-6 text-amber-500 animate-pulse ${Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
-                    ? 'scale-115 text-emerald-650'
-                    : ''
+                  ? 'scale-115 text-emerald-650'
+                  : ''
                   }`} />
                 <span className={`text-[8px] font-black uppercase tracking-widest font-mono mt-0.5 ${Math.abs((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) < 7 || Math.abs(((294.5 - (deviceHeading !== null ? deviceHeading : compassHeading) + 360) % 360) - 360) < 7
-                    ? 'text-emerald-700'
-                    : 'text-amber-600'
+                  ? 'text-emerald-700'
+                  : 'text-amber-600'
                   }`}>KIBLAT</span>
               </div>
 
@@ -1227,8 +1227,8 @@ export default function App() {
                     setCompassHeading(291 + i * 2);
                   }}
                   className={`w-full p-4 rounded-xl text-left border flex justify-between items-center transition-colors ${isSelected
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold'
-                      : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-750'
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-750'
                     }`}
                 >
                   <div className="flex items-center gap-3">
@@ -1325,11 +1325,11 @@ export default function App() {
                     // 🛡️ SUNTIKAN INTEGRATION: MEMINTA IZIN NOTIFIKASI NATIVE CAPACITOR (ANTI-BLANK WEB)
                     // =========================================================================
                     try {
-                      // Cek secara aman apakah aplikasi berjalan sebagai aplikasi HP native, bukan browser web biasa
-                      const isNative = typeof window !== 'undefined' && (window as any).Capacitor && (window as any).Capacitor.isNativePlatform();
+                      const capWindow = window as any;
+                      const isNative = typeof window !== 'undefined' && capWindow.Capacitor && capWindow.Capacitor.isNativePlatform();
 
-                      if (isNative) {
-                        const { LocalNotifications } = await import('@capacitor/local-notifications');
+                      if (isNative && capWindow.Capacitor.Plugins && capWindow.Capacitor.Plugins.LocalNotifications) {
+                        const LocalNotifications = capWindow.Capacitor.Plugins.LocalNotifications;
                         const checkPerm = await LocalNotifications.checkPermissions();
 
                         if (checkPerm.display !== 'granted') {
