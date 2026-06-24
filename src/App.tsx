@@ -606,7 +606,7 @@ export default function App() {
   // Silent downloader logic
   const downloadAndCacheAllKitabs = async () => {
     try {
-      console.log("[MUARA] Memulai pengunduhan seluruh kitab untuk akses offline...");
+      console.log("[MUARA] Memulai pengunduhan seluruh kitab beserta isi lengkapnya untuk akses offline...");
 
       // 1. Caching MOCK_KITABS
       for (const k of MOCK_KITABS) {
@@ -617,7 +617,7 @@ export default function App() {
         }
       }
 
-      // 2. Fetch & Caching Firestore Kitabs
+      // 2. Fetch & Caching Firestore Kitabs (dengan mengunduh seluruh halaman teks secara lengkap)
       const snap = await getDocs(collection(firestore, 'kitabs'));
       const firestoreList = snap.docs.map(doc => {
         const d = doc.data();
@@ -628,10 +628,53 @@ export default function App() {
       });
 
       for (const k of firestoreList) {
-        const isSaved = await indexedDbService.isSaved(k.id);
-        if (!isSaved) {
-          console.log(`[MUARA Offline] Menyimpan firestore kitab: ${k.title}`);
-          await indexedDbService.saveKitab(k);
+        // Cek apakah kitab sudah terunduh secara lengkap (memiliki textBody atau pages)
+        const existingLocal = await indexedDbService.getKitab(k.id);
+        const hasFullContent = existingLocal && (existingLocal.textBody || (existingLocal.pages && existingLocal.pages.length > 0));
+
+        if (!hasFullContent) {
+          console.log(`[MUARA Offline] Mengunduh konten teks lengkap untuk: ${k.title}...`);
+          
+          let finalPages: string[] = k.pages || [];
+          let finalTextBody = k.textBody || '';
+
+          // Ambil isi teks dari kitab_contents karena di koleksi utama 'kitabs' hanya metadata
+          if (!finalTextBody && finalPages.length === 0) {
+            try {
+              const contentSnap = await getDoc(doc(firestore, 'kitab_contents', k.id));
+              if (contentSnap.exists()) {
+                const cData = contentSnap.data();
+                if (cData.isSegmented) {
+                  const chunkCount = cData.chunkCount || 0;
+                  const chunkPromises = [];
+                  for (let i = 0; i < chunkCount; i++) {
+                    chunkPromises.push(getDoc(doc(firestore, 'kitab_contents', `${k.id}_chunk_${i}`)));
+                  }
+                  const chunkSnaps = await Promise.all(chunkPromises);
+                  for (const chunkSnap of chunkSnaps) {
+                    if (chunkSnap.exists()) {
+                      finalPages = finalPages.concat(chunkSnap.data().pages || []);
+                    }
+                  }
+                  finalTextBody = finalPages.join('\n\n');
+                } else {
+                  finalPages = cData.pages || [];
+                  finalTextBody = cData.textBody || '';
+                }
+              }
+            } catch (fetchContentErr) {
+              console.warn(`[MUARA Offline] Gagal mengunduh teks kitab "${k.title}":`, fetchContentErr);
+            }
+          }
+
+          const merged = {
+            ...k,
+            pages: finalPages,
+            textBody: finalTextBody
+          };
+
+          await indexedDbService.saveKitab(merged);
+          console.log(`[MUARA Offline] Berhasil mengunduh & mengamankan "${k.title}" secara lokal.`);
         }
       }
 
@@ -647,7 +690,7 @@ export default function App() {
         }
       }
 
-      console.log("[MUARA] Seluruh kitab berhasil terunduh ke penyimpanan lokal untuk dibaca offline!");
+      console.log("[MUARA] Seluruh kitab beserta teks lengkapnya berhasil disinkronisasi ke penyimpanan lokal!");
     } catch (err) {
       console.warn("[MUARA Offline Error] Gagal melakukan pra-unduh kitab:", err);
     }
