@@ -20,7 +20,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
 import { MOCK_KITABS } from '../data/mockData';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { firestore } from '../lib/firebaseConfig';
 import { indexedDbService } from '../lib/indexedDbService';
 import BahtsulMasail from './BahtsulMasail';
@@ -192,6 +192,41 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       }
     } catch (e) {
       console.error(e);
+    }
+
+    // Ensure that any dynamic kitab fetched from Firestore has its full content resolved if it is missing
+    for (let i = 0; i < list.length; i++) {
+      const item = list[i];
+      if (!item.textBody && (!item.pages || item.pages.length === 0)) {
+        try {
+          console.log(`[Santri AI Dynamic Loader] Mengunduh konten teks lengkap secara langsung untuk RAG: ${item.title}...`);
+          const contentSnap = await getDoc(doc(firestore, 'kitab_contents', item.id));
+          if (contentSnap.exists()) {
+            const cData = contentSnap.data();
+            if (cData.isSegmented) {
+              const chunkCount = cData.chunkCount || 0;
+              const chunkPromises = [];
+              for (let c = 0; c < chunkCount; c++) {
+                chunkPromises.push(getDoc(doc(firestore, 'kitab_contents', `${item.id}_chunk_${c}`)));
+              }
+              const chunkSnaps = await Promise.all(chunkPromises);
+              let finalPages: string[] = [];
+              for (const chunkSnap of chunkSnaps) {
+                if (chunkSnap.exists()) {
+                  finalPages = finalPages.concat(chunkSnap.data().pages || []);
+                }
+              }
+              list[i].pages = finalPages;
+              list[i].textBody = finalPages.join('\n\n');
+            } else {
+              list[i].pages = cData.pages || [];
+              list[i].textBody = cData.textBody || '';
+            }
+          }
+        } catch (fetchContentErr) {
+          console.warn(`[Santri AI Dynamic Loader] Gagal mengunduh teks kitab "${item.title}":`, fetchContentErr);
+        }
+      }
     }
 
     // Deduplicate the merged kitab list by ID
@@ -619,10 +654,11 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       return <p className="text-[#064e3b] text-xs sm:text-sm font-sans break-words">{msg.text}</p>;
     }
 
-    // Markdown conversion (bold only for simplicity)
-    const formattedText = msg.text
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>');
+    const parseFormattedText = (text: string) => {
+      return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+    };
 
     // Parse specific link formatting: [Buka: Kitab Title - Bab/Section - Halaman Number]
     const regex = /\[Buka:\s*([^-]+?)\s*-\s*([^-]+?)\s*-\s*(?:Halaman\s*)?(\d+)\s*\]/gi;
@@ -633,10 +669,11 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
     while ((match = regex.exec(msg.text)) !== null) {
       // Push text segment before match
       if (match.index > lastIndex) {
+        const textSegment = msg.text.substring(lastIndex, match.index);
         segments.push(
           <span 
             key={`text-${lastIndex}`}
-            dangerouslySetInnerHTML={{ __html: formattedText.substring(lastIndex, match.index) }}
+            dangerouslySetInnerHTML={{ __html: parseFormattedText(textSegment) }}
           />
         );
       }
@@ -665,17 +702,18 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
     }
 
     if (lastIndex < msg.text.length) {
+      const textSegment = msg.text.substring(lastIndex);
       segments.push(
         <span 
           key={`text-${lastIndex}`}
-          dangerouslySetInnerHTML={{ __html: formattedText.substring(lastIndex) }}
+          dangerouslySetInnerHTML={{ __html: parseFormattedText(textSegment) }}
         />
       );
     }
 
     return (
       <div className="text-slate-700 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap select-none font-sans">
-        {segments.length > 0 ? segments : <span dangerouslySetInnerHTML={{ __html: formattedText }} />}
+        {segments.length > 0 ? segments : <span dangerouslySetInnerHTML={{ __html: parseFormattedText(msg.text) }} />}
       </div>
     );
   };

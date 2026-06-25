@@ -33,6 +33,7 @@ import {
   updateDoc, 
   deleteDoc,
   doc, 
+  getDoc,
   onSnapshot, 
   query, 
   orderBy, 
@@ -52,8 +53,7 @@ import BahtsulMasailMyPosts from './BahtsulMasailMyPosts';
 const getApiUrl = (path: string): string => {
   const isCapacitor = typeof window !== 'undefined' && (
     !!(window as any).Capacitor || 
-    window.location.protocol === 'capacitor:' || 
-    (window.location.protocol === 'http:' && window.location.hostname === 'localhost' && !window.location.port)
+    window.location.protocol === 'capacitor:'
   );
   
   if (isCapacitor) {
@@ -256,6 +256,41 @@ export default function BahtsulMasail({
         }
       } catch (localErr) {
         console.warn('Local storage custom kitabs load fail:', localErr);
+      }
+
+      // Ensure that any dynamic kitab fetched from Firestore has its full content resolved if it is missing
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        if (!item.textBody && (!item.pages || item.pages.length === 0)) {
+          try {
+            console.log(`[Bahtsul Masail Dynamic Loader] Mengunduh konten teks lengkap secara langsung untuk RAG: ${item.title}...`);
+            const contentSnap = await getDoc(doc(firestore, 'kitab_contents', item.id));
+            if (contentSnap.exists()) {
+              const cData = contentSnap.data();
+              if (cData.isSegmented) {
+                const chunkCount = cData.chunkCount || 0;
+                const chunkPromises = [];
+                for (let c = 0; c < chunkCount; c++) {
+                  chunkPromises.push(getDoc(doc(firestore, 'kitab_contents', `${item.id}_chunk_${c}`)));
+                }
+                const chunkSnaps = await Promise.all(chunkPromises);
+                let finalPages: string[] = [];
+                for (const chunkSnap of chunkSnaps) {
+                  if (chunkSnap.exists()) {
+                    finalPages = finalPages.concat(chunkSnap.data().pages || []);
+                  }
+                }
+                list[i].pages = finalPages;
+                list[i].textBody = finalPages.join('\n\n');
+              } else {
+                list[i].pages = cData.pages || [];
+                list[i].textBody = cData.textBody || '';
+              }
+            }
+          } catch (fetchContentErr) {
+            console.warn(`[Bahtsul Masail Dynamic Loader] Gagal mengunduh teks kitab "${item.title}":`, fetchContentErr);
+          }
+        }
       }
 
       setDynamicKitabs(list);
