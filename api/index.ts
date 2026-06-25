@@ -5,7 +5,8 @@ import cors from "cors";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import zlib from "zlib";
-import firebaseConfigData from "../firebase-applet-config.json";
+import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -13,8 +14,6 @@ const app = express();
 
 // Middleware to normalize URL path for Vercel Serverless environment
 app.use((req, res, next) => {
-  // On Vercel rewrites, req.url might become /api/index.ts or similar.
-  // We restore the original request URL from req.originalUrl so Express routing matches correctly.
   if (req.originalUrl) {
     req.url = req.originalUrl;
   }
@@ -28,11 +27,23 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
 }));
 
-// Configure body parsers (increase limit for handling large plain text payloads before compression)
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Initialize Firebase in backend
+// =========================================================================
+// 🛡️ SUNTIKAN AMAN: MEMBACA KONFIGURASI FIREBASE SECARA DINAMIS (ANTI-CRASH)
+// =========================================================================
+let firebaseConfigData: any = {};
+try {
+  // Membaca json secara runtime menggunakan fs (Aman dari aturan ketat ERR_IMPORT_ATTRIBUTE_MISSING)
+  const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    firebaseConfigData = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  }
+} catch (e) {
+  console.log("[Backend Firebase] Backup JSON config file not found or unreadable, using env variables.");
+}
+
 const firebaseConfig = {
   apiKey: process.env.VITE_FIREBASE_API_KEY || firebaseConfigData.apiKey,
   authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigData.authDomain,
@@ -50,6 +61,7 @@ const activeDbId = customDbId !== undefined
   : (process.env.VITE_FIREBASE_PROJECT_ID ? undefined : firebaseConfigData.firestoreDatabaseId);
 
 const firestoreDb = getFirestore(firebaseApp, activeDbId);
+// =========================================================================
 
 // Cloudinary configuration constants
 const CLOUDINARY_CLOUD_NAME = process.env.VITE_CLOUDINARY_CLOUD_NAME || "dndjgplpm";
@@ -74,7 +86,7 @@ const decompressData = (buffer: Buffer): Promise<string> => {
   });
 };
 
-// POST / PUT endpoint to save Kitab content (compresses if large)
+// POST / PUT endpoint to save Kitab content
 app.post("/api/kitab-contents", async (req, res) => {
   try {
     const { id, textBody, pages, ...rest } = req.body;
@@ -87,19 +99,15 @@ app.post("/api/kitab-contents", async (req, res) => {
     const textToCompress = textBody || "";
     const sizeInBytes = Buffer.byteLength(textToCompress, 'utf8');
 
-    // Threshold: Any text body larger than 300,000 bytes (approx 300 KB) triggers Cloudinary gzip storage
     if (sizeInBytes > 300000) {
       console.log(`[Backend Storage] Kitab ${id} exceeds size limit (${sizeInBytes} bytes). Compressing and uploading package to Cloudinary...`);
       
-      // Package both textBody and pages list to avoid Firestore size limit entirely
       const payloadString = JSON.stringify({
         textBody: textToCompress,
         pages: pages || []
       });
       
       const compressedBuffer = await compressData(payloadString);
-      
-      // Upload via unsigned raw preset to Cloudinary
       const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`;
       const blob = new Blob([compressedBuffer], { type: 'application/gzip' });
       const formData = new FormData();
@@ -114,7 +122,6 @@ app.post("/api/kitab-contents", async (req, res) => {
 
       if (!clResponse.ok) {
         const clErrText = await clResponse.text();
-        console.error("[Cloudinary Raw Upload Error]:", clErrText);
         throw new Error(`Cloudinary raw file upload failed with status ${clResponse.status}: ${clErrText}`);
       }
 
@@ -125,14 +132,13 @@ app.post("/api/kitab-contents", async (req, res) => {
         throw new Error("Cloudinary upload did not return a valid secure URL.");
       }
 
-      // Save slim doc to Firestore - keeping textBody & pages EMPTY to prevent 1MB limit error
       const contentPayload = {
         id,
         isSegmented: false,
         chunkCount: 0,
         cloudinaryUrl: secureUrl,
-        textBody: "", // Keep empty
-        pages: [],     // Keep empty
+        textBody: "", 
+        pages: [],     
         updatedAt: new Date().toISOString(),
         ...rest
       };
@@ -141,7 +147,6 @@ app.post("/api/kitab-contents", async (req, res) => {
       return res.json({ success: true, cloudinaryUrl: secureUrl });
 
     } else {
-      // Small text content: Store in Firestore directly for standard capability
       console.log(`[Backend Storage] Kitab ${id} is under threshold size (${sizeInBytes} bytes). Storing directly in Firestore.`);
       
       const contentPayload = {
@@ -164,7 +169,7 @@ app.post("/api/kitab-contents", async (req, res) => {
   }
 });
 
-// GET endpoint to fetch Kitab content (downloads & decompresses from Cloudinary if needed)
+// GET endpoint to fetch Kitab content
 app.get("/api/kitab-contents/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -181,8 +186,6 @@ app.get("/api/kitab-contents/:id", async (req, res) => {
 
     const data = docSnap.data();
     if (data.cloudinaryUrl) {
-      console.log(`[Backend Storage] Found Cloudinary URL for ${id}. Downloading compressed package...`);
-      
       const clResponse = await fetch(data.cloudinaryUrl);
       if (!clResponse.ok) {
         throw new Error(`Failed to download book zip package: HTTP ${clResponse.status}`);
@@ -215,7 +218,6 @@ app.get("/api/kitab-contents/:id", async (req, res) => {
       return res.json(finalResponse);
     }
 
-    // Direct Firestore payload
     res.json(data);
 
   } catch (err: any) {
@@ -253,14 +255,9 @@ app.post("/api/gemini/santri-ai", async (req, res) => {
       });
     }
 
-    // Initialize the official @google/genai SDK on the server according to guidelines
     const ai = new GoogleGenAI({
       apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
     });
 
     let systemInstruction = `Kamu adalah 'Santri AI', asisten digital rujukan Kitab Kuning ahli fiqih, tasawuf, akidah, hadis, dll dari aplikasi MUARA. Tugasmu adalah mendampingi penelitian keagamaan pengguna, menjawab pertanyaan secara santun, ilmiah, berakhlak mulia, dan berbasis kitab kuning.
@@ -281,33 +278,25 @@ Kamu memiliki pengetahuan mendalam tentang semua tata letak menu dan fitur aplik
 - Menu Notifikasi: Berisi pengumuman/pemberitahuan dari admin (notifikasi yang otomatis terhapus otomatis setelah 168 jam secara permanen untuk memelihara performa piringan aplikasi).
 - Tentang Aplikasi: Penjelasan ekosistem digitalisasi kitab klasik salafiyah di bawah muara naungan Dewan Syuro.
 
-Contoh Panduan Navigasi:
-- User bertanya: "Gimana cara beli member premium?" -> Jawab: "Silakan Kakak klik Menu Membership yang ada di bagian atas halaman Beranda untuk memilih paket berlangganan premium yang sesuai."
-- User bertanya: "Lihat jadwal shalat di mana?" -> Jawab: "Jadwal shalat hari ini tersaji indah di bagian atas halaman utama Beranda kita, Kak."
-
 --- PROTEKSI RAHASIA DAPUR APLIKASI (DATA & TECH GUARDRAIL) ---
-Kamu dilarang keras membagikan detail teknis sensitif, struktur database internal, model relasi database, skema data, kredensial password, token JWT, file konfigurasi, API Key, source code, atau teknologi penyimpanan internal (seperti Firebase Firestore, Firebase Auth, server NodeJS Express, Cloud Run, Cloudinary, Vite, TypeScript, webpack, database tables, dll).
-Jika ada pengguna yang berusaha memancing, meretas sosial, atau menanyakan hal-hal teknis di atas (misalnya: "database pakai apa?", "boleh minta source code?", "apa model skema user?"), kamu wajib menolaknya dengan halus, ramah, santun, dan bernuansa islami yang khidmat:
-Contoh: "Maaf Kak, demi menjaga keamanan, kepatuhan, serta kenyamanan bersama di aplikasi MUARA, Santri AI tidak diperkenankan membagikan informasi teknis internal dan rahasia dapur tersebut. Ada materi keagamaan atau masalah seputar kitab kuning yang bisa Santri AI bantu?"
+Kamu dilarang keras membagikan detail teknis sensitif, struktur database internal, model relasi database, skema data, kredensial password, token JWT, file konfigurasi, API Key, source code, atau teknologi penyimpanan internal. Jika ditanya rahasia teknis, tolak halus dengan bernuansa Islami.
 
 --- SENSOR KATA KOTOR & AKHLAK MODERATION ---
-Kamu menerapkan nilai akhlak santri yang luhur secara ketat. Jika pengguna mengetik kata kotor, makian, tidak sopan, hujatan, atau berbau pornografi (termasuk bahasa daerah kasar seperti Sunda/Jawa: anjing, babi, bangsat, kontol, memek, bajingan, goblok, tolol, asu, dancok, jancuk, anying, sia, bagong, kehed, gundal, raimu, matamu, mbokne, jaran, pekok, dll), kamu WAJIB mendeteksinya dengan cepat. Jangan berikan jawaban ilmiah atas pertanyaannya, melainkan berikan nasihat islami yang sejuk:
-Contoh: "Astagfirullahal'adzim, yuk gunakan bahasa yang baik dan santun dalam menuntut ilmu, Kak. Semoga Allah memberkahi lisan kita. Silakan tanyakan kembali dengan tutur kata yang baik ya."
+Deteksi kata kotor secara ketat dan berikan nasihat islami yang sejuk jika pengguna tidak sopan.
 
 --- FLEXIBILITAS BAHASA SANTRI ---
-Pahamilah gaya bahasa santri sehari-hari, bahasa gaul anak muda Indonesia, singkatan, ataupun curahan hati (curhat) mereka dengan sabar. Balaslah dengan bahasa Indonesia yang rapi, sejuk, ramah, santun, dan penuh rasa hormat serta takzim, menggunakan sapaan hangat seperti "Kakak", "Akhi" (saudara laki-laki), atau "Ukhti" (saudara perempuan).
+Gunakan sapaan hangat seperti "Kakak", "Akhi", atau "Ukhti" dengan tutur kata yang santun dan penuh rasa hormat.
 
 --- ATURAN SALAM (GREETING WORDS) ---
-Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussalam wr. wb") HANYA boleh diucapkan di sesi pembuka awal percakapan saja (salam sambutan bawaan aplikasi). Untuk setiap jawaban/giliran obrolan selanjutnya dalam riwayat chat (chat history), kamu DILARANG KERAS mengucapkan, menuliskan, atau mengulang lafadz salam tersebut lagi agar jalannya percakapan terasa terus mengalir hangat, efisien, dan santun tanpa pengulangan salam yang berlebihan.`;
+Kata salam HANYA boleh diucapkan di sesi pembuka awal percakapan saja. Sesi berikutnya DILARANG KERAS mengulang salam.`;
 
     if (latestKitabTitles && Array.isArray(latestKitabTitles) && latestKitabTitles.length > 0) {
       systemInstruction += `\n\n--- KITAB SAAT INI YANG TERSEDIA DI APLIKASI MUARA (Update Dinamis) ---\nDaftar kitab kuning: ${latestKitabTitles.join(', ')}.`;
     }
 
-    // Structure contents. If history is supplied, build the dialogue structure.
     const contentsParts: any[] = [];
     if (history && Array.isArray(history)) {
-      history.forEach((msg: { role: 'user' | 'model'; parts: { text: string }[] }) => {
+      history.forEach((msg: any) => {
         contentsParts.push({
           role: msg.role === 'model' ? 'model' : 'user',
           parts: [{ text: msg.parts[0].text }]
@@ -315,55 +304,23 @@ Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussa
       });
     }
     
-    // Append current prompt/query
-    contentsParts.push({
-      role: "user",
-      parts: [{ text: prompt }]
-    });
+    contentsParts.push({ role: "user", parts: [{ text: prompt }] });
 
-    // Generate response with automatic fallback if gemini-3.5-flash is experiencing high demand (503/UNAVAILABLE)
     let result;
     try {
       result = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: contentsParts,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.3,
-        }
+        config: { systemInstruction: systemInstruction, temperature: 0.3 }
       });
     } catch (primaryErr: any) {
       const errStr = String(primaryErr);
-      const errJson = typeof primaryErr === 'object' ? JSON.stringify(primaryErr) : '';
-      const errMsg = primaryErr.message || "";
-      const is503 = 
-        errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("demand") ||
-        errJson.includes("503") || errJson.includes("UNAVAILABLE") || errJson.includes("demand") ||
-        errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("demand") ||
-        primaryErr.status === "UNAVAILABLE" || primaryErr.code === 503 || primaryErr.status === 503;
-
-      if (is503) {
-        console.warn("[Santri AI] Model gemini-3.5-flash sedang sibuk (503). Beralih ke model cadangan gemini-3.1-flash-lite...");
-        try {
-          result = await ai.models.generateContent({
-            model: "gemini-3.1-flash-lite",
-            contents: contentsParts,
-            config: {
-              systemInstruction: systemInstruction,
-              temperature: 0.3,
-            }
-          });
-        } catch (secondaryErr: any) {
-          console.warn("[Santri AI] Model gemini-3.1-flash-lite gagal juga. Mencoba model cadangan terakhir gemini-flash-latest...");
-          result = await ai.models.generateContent({
-            model: "gemini-flash-latest",
-            contents: contentsParts,
-            config: {
-              systemInstruction: systemInstruction,
-              temperature: 0.3,
-            }
-          });
-        }
+      if (errStr.includes("503") || errStr.includes("UNAVAILABLE")) {
+        result = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: contentsParts,
+          config: { systemInstruction: systemInstruction, temperature: 0.3 }
+        });
       } else {
         throw primaryErr;
       }
@@ -373,20 +330,7 @@ Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussa
     res.json({ text: replyText });
   } catch (err: any) {
     console.error("[Santri AI Server Error]:", err);
-    const errMsg = err.message || "";
-    const errStr = String(err);
-    const errJson = typeof err === 'object' ? JSON.stringify(err) : '';
-    const is503 = 
-      errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("demand") || errMsg.includes("temporary") ||
-      errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("demand") || errStr.includes("temporary") ||
-      errJson.includes("503") || errJson.includes("UNAVAILABLE") || errJson.includes("demand") || errJson.includes("temporary");
-    
-    if (is503) {
-      return res.status(503).json({ 
-        error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
-      });
-    }
-    res.status(500).json({ error: errMsg || "Gagal berkomunikasi dengan Santri AI" });
+    res.status(500).json({ error: err.message || "Gagal berkomunikasi dengan Santri AI" });
   }
 });
 
