@@ -68,18 +68,71 @@ const getFriendlyErrorMessage = (err: any, fallbackMessage: string): string => {
   return fallbackMessage;
 };
 
+export const isDefaultAvatar = (url: string | null | undefined): boolean => {
+  if (!url) return true;
+  const lowercaseUrl = url.toLowerCase();
+  return (
+    lowercaseUrl.includes('unsplash.com') ||
+    lowercaseUrl.includes('ui-avatars.com') ||
+    lowercaseUrl.includes('photo-') ||
+    lowercaseUrl.includes('gravatar.com')
+  );
+};
+
+export const getAvatarInitial = (name: string): string => {
+  return name ? name.trim().charAt(0).toUpperCase() : 'U';
+};
+
+export const getAvatarColorClass = (name: string): string => {
+  const initial = getAvatarInitial(name);
+  const colors = [
+    'bg-emerald-600 text-white',
+    'bg-teal-600 text-white',
+    'bg-indigo-600 text-white',
+    'bg-cyan-600 text-white',
+    'bg-amber-600 text-white',
+    'bg-rose-600 text-white',
+    'bg-sky-600 text-white',
+  ];
+  const charCode = initial.charCodeAt(0) || 0;
+  return colors[charCode % colors.length];
+};
+
+export const renderUserAvatar = (url: string | null | undefined, name: string, sizeClass = "h-20 w-20 text-2xl") => {
+  if (isDefaultAvatar(url)) {
+    const initial = getAvatarInitial(name);
+    const colorClass = getAvatarColorClass(name);
+    return (
+      <div className={`${sizeClass} rounded-full ${colorClass} flex items-center justify-center font-extrabold font-sans shadow-md border-2 border-white select-none`}>
+        {initial}
+      </div>
+    );
+  }
+  return (
+    <img 
+      src={url!} 
+      alt={name} 
+      className={`${sizeClass} rounded-full object-cover shadow-md border-2 border-white`}
+      referrerPolicy="no-referrer"
+    />
+  );
+};
+
+
 interface SatuPintuAuthProps {
   onAuthSuccess: (user: UserSchema) => void;
   onLogout: () => void;
   currentUser: (UserSchema & { isLoggedIn: boolean }) | null;
   onNavigateToAdmin: () => void;
+  onOpenMembership?: () => void;
 }
 
 export default function SatuPintuAuth({
   onAuthSuccess,
   onLogout,
   currentUser,
-  onNavigateToAdmin
+  onNavigateToAdmin,
+  onOpenMembership
 }: SatuPintuAuthProps) {
   // Modal view states: 'login' or 'register' or 'forgot_password'
   const [activeSegment, setActiveSegment] = useState<'login' | 'register' | 'forgot_password'>('login');
@@ -420,12 +473,7 @@ export default function SatuPintuAuth({
         <div className="space-y-6">
           <div className="text-center p-4 bg-emerald-500/5 rounded-2xl border border-emerald-100 flex flex-col items-center">
             <div className="relative">
-              <img 
-                src={currentUser.avatarUrl} 
-                alt="Profile Avatar" 
-                className="h-20 w-20 rounded-full border-2 border-emerald-500 object-cover shadow-md"
-                referrerPolicy="no-referrer"
-              />
+              {renderUserAvatar(currentUser.avatarUrl, currentUser.name, "h-20 w-20 text-2xl")}
               <div className="absolute bottom-0 right-1 bg-emerald-600 p-1 rounded-full border border-white text-white shadow-xs">
                 <Camera className="h-3 w-3" />
               </div>
@@ -507,10 +555,14 @@ export default function SatuPintuAuth({
               <button
                 type="button"
                 onClick={() => {
-                  window.dispatchEvent(new CustomEvent('muara-open-membership'));
-                  const btn = document.getElementById('menu-btn-membership');
-                  if (btn) {
-                    btn.click();
+                  if (onOpenMembership) {
+                    onOpenMembership();
+                  } else {
+                    window.dispatchEvent(new CustomEvent('muara-open-membership'));
+                    const btn = document.getElementById('menu-btn-membership');
+                    if (btn) {
+                      btn.click();
+                    }
                   }
                 }}
                 className="flex items-center justify-between p-3.5 rounded-xl border border-slate-150 bg-white hover:border-amber-200 hover:bg-amber-50/10 hover:shadow-xs transition-with duration-200 text-left cursor-pointer group"
@@ -813,72 +865,7 @@ export default function SatuPintuAuth({
                   </div>
                 )}
 
-                {/* FILE 1: PROFILE PHOTO UPLOADER (DRAG & DROP + CLICK) */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Foto Profil Anda <span className="text-[10px] font-normal text-slate-400 font-sans">(Opsional - default icon di-generate otomatis)</span>
-                  </label>
-                  
-                  <div 
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${
-                      isDragging 
-                        ? 'border-emerald-600 bg-emerald-500/5' 
-                        : regPhotoUrl 
-                        ? 'border-emerald-500/40 bg-emerald-50/20' 
-                        : 'border-slate-300 hover:border-slate-450 bg-slate-50/40'
-                    }`}
-                  >
-                    <input 
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      accept="image/*"
-                      className="hidden"
-                    />
-
-                    {isPhotoUploading ? (
-                      // Uplading status
-                      <div className="space-y-2 py-2">
-                        <div className="inline-block animate-spin rounded-full h-7 w-7 border-4 border-emerald-500 border-t-transparent" />
-                        <p className="text-xs font-bold text-emerald-800">
-                          Sedang mengunggah foto profil...
-                        </p>
-                        {uploadPercent !== null && (
-                          <div className="w-40 mx-auto bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                            <div className="bg-emerald-600 h-full transition-all duration-100" style={{ width: `${uploadPercent}%` }} />
-                          </div>
-                        )}
-                      </div>
-                    ) : regPhotoUrl ? (
-                      // Success loaded preview
-                      <div className="flex items-center justify-center gap-3">
-                        <img 
-                          src={regPhotoUrl} 
-                          alt="preview" 
-                          className="h-14 w-14 rounded-full object-cover border-2 border-emerald-500 shadow-xs" 
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="text-left">
-                          <span className="block text-xs font-extrabold text-emerald-800">Berhasil diunggah (Terkompresi otomatis)</span>
-                          <span className="text-[10px] text-slate-400 font-mono truncate max-w-[180px] block">
-                            {regPhoto?.name || 'photo_profile.jpg'}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      // Empty state
-                      <div className="space-y-1.5 py-1 text-slate-500">
-                        <UploadCloud className="h-8 w-8 mx-auto text-slate-400" />
-                        <p className="text-xs font-bold text-slate-700">Tarik gambar ke sini, atau klik untuk memilih</p>
-                        <p className="text-[10px] text-slate-400">Pastikan format foto (JPG, PNG) di bawah 3MB</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                {/* PROFILE PHOTO UPLOADER REMOVED FOR ACCESS SIMPLICITY */}
 
                 {/* FIELD 2: FULL NAME */}
                 <div>

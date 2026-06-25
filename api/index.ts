@@ -11,6 +11,16 @@ dotenv.config();
 
 const app = express();
 
+// Middleware to normalize URL path for Vercel Serverless environment
+app.use((req, res, next) => {
+  // On Vercel rewrites, req.url might become /api/index.ts or similar.
+  // We restore the original request URL from req.originalUrl so Express routing matches correctly.
+  if (req.originalUrl) {
+    req.url = req.originalUrl;
+  }
+  next();
+});
+
 // Configure CORS middleware to enable Capacitor access
 app.use(cors({
   origin: "*",
@@ -311,22 +321,67 @@ Kata salam (seperti "Assalamu'alaikum wr. wb" atau jawaban salam "Wa'alaikumussa
       parts: [{ text: prompt }]
     });
 
-    // Generate response using gemini-3.5-flash as the recommended model
-    const result = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: contentsParts,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.3,
+    // Generate response with automatic fallback if gemini-3.5-flash is experiencing high demand (503/UNAVAILABLE)
+    let result;
+    try {
+      result = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: contentsParts,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.3,
+        }
+      });
+    } catch (primaryErr: any) {
+      const errStr = String(primaryErr);
+      const errJson = typeof primaryErr === 'object' ? JSON.stringify(primaryErr) : '';
+      const errMsg = primaryErr.message || "";
+      const is503 = 
+        errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("demand") ||
+        errJson.includes("503") || errJson.includes("UNAVAILABLE") || errJson.includes("demand") ||
+        errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("demand") ||
+        primaryErr.status === "UNAVAILABLE" || primaryErr.code === 503 || primaryErr.status === 503;
+
+      if (is503) {
+        console.warn("[Santri AI] Model gemini-3.5-flash sedang sibuk (503). Beralih ke model cadangan gemini-3.1-flash-lite...");
+        try {
+          result = await ai.models.generateContent({
+            model: "gemini-3.1-flash-lite",
+            contents: contentsParts,
+            config: {
+              systemInstruction: systemInstruction,
+              temperature: 0.3,
+            }
+          });
+        } catch (secondaryErr: any) {
+          console.warn("[Santri AI] Model gemini-3.1-flash-lite gagal juga. Mencoba model cadangan terakhir gemini-flash-latest...");
+          result = await ai.models.generateContent({
+            model: "gemini-flash-latest",
+            contents: contentsParts,
+            config: {
+              systemInstruction: systemInstruction,
+              temperature: 0.3,
+            }
+          });
+        }
+      } else {
+        throw primaryErr;
       }
-    });
+    }
 
     const replyText = result.text || "Terjadi kesalahan dalam memberikan respon.";
     res.json({ text: replyText });
   } catch (err: any) {
     console.error("[Santri AI Server Error]:", err);
     const errMsg = err.message || "";
-    if (errMsg.includes("UNAVAILABLE") || errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("temporary")) {
+    const errStr = String(err);
+    const errJson = typeof err === 'object' ? JSON.stringify(err) : '';
+    const is503 = 
+      errMsg.includes("503") || errMsg.includes("UNAVAILABLE") || errMsg.includes("demand") || errMsg.includes("temporary") ||
+      errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("demand") || errStr.includes("temporary") ||
+      errJson.includes("503") || errJson.includes("UNAVAILABLE") || errJson.includes("demand") || errJson.includes("temporary");
+    
+    if (is503) {
       return res.status(503).json({ 
         error: "maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti" 
       });

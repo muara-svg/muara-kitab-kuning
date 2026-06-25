@@ -3,6 +3,7 @@ import { LogIn, LogOut, Phone, Mail } from 'lucide-react';
 import { motion } from 'motion/react';
 import Modal from './Modal';
 import { UserProfile } from '../types';
+import { renderUserAvatar } from './SatuPintuAuth';
 
 interface MenuLoginAkunProps {
   userProfile: UserProfile;
@@ -64,12 +65,7 @@ export default function MenuLoginAkun({
       >
         <div className="flex items-center justify-center h-[42px] w-[42px] sm:h-12 sm:w-12 rounded-full bg-emerald-100 text-emerald-600 mb-1.5 sm:mb-2 shrink-0">
           {userProfile.isLoggedIn ? (
-            <img 
-              src={userProfile.avatarUrl} 
-              alt="Avatar" 
-              className="h-8 w-8 sm:h-10 sm:w-10 rounded-full border border-emerald-400 object-cover" 
-              referrerPolicy="no-referrer"
-            />
+            renderUserAvatar(userProfile.avatarUrl, userProfile.name, "h-8 w-8 sm:h-10 sm:w-10 text-xs sm:text-sm")
           ) : (
             <LogIn className="h-5 w-5 sm:h-6 sm:w-6" />
           )}
@@ -92,12 +88,7 @@ export default function MenuLoginAkun({
         {userProfile.isLoggedIn ? (
           <div className="space-y-5">
             <div className="flex items-center gap-4 bg-gradient-to-r from-emerald-500/5 to-emerald-500/10 p-4 rounded-2xl border border-emerald-100">
-              <img 
-                src={userProfile.avatarUrl} 
-                alt="Profile" 
-                className="h-16 w-16 rounded-full border-2 border-emerald-500 object-cover"
-                referrerPolicy="no-referrer"
-              />
+              {renderUserAvatar(userProfile.avatarUrl, userProfile.name, "h-16 w-16 text-lg")}
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-slate-800 text-base">{userProfile.name}</h3>

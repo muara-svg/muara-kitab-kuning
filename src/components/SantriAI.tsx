@@ -13,7 +13,9 @@ import {
   MessageSquareQuote,
   FlameKindling,
   ArrowUpRight,
-  Users
+  Users,
+  Copy,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
@@ -27,8 +29,7 @@ import BahtsulMasail from './BahtsulMasail';
 const getApiUrl = (path: string): string => {
   const isCapacitor = typeof window !== 'undefined' && (
     !!(window as any).Capacitor || 
-    window.location.protocol === 'capacitor:' || 
-    (window.location.protocol === 'http:' && window.location.hostname === 'localhost' && !window.location.port)
+    window.location.protocol === 'capacitor:'
   );
   
   if (isCapacitor) {
@@ -73,6 +74,23 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
     }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyMessage = (id: string, text: string) => {
+    // Clean text by stripping markdown bold tags or custom reference links if desired
+    // Here we copy the clean text
+    const cleanText = text
+      .replace(/\*\*(.*?)\*\*/g, '$1') // remove **
+      .replace(/\*(.*?)\*/g, '$1');   // remove *
+
+    navigator.clipboard.writeText(cleanText).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch(err => {
+      console.error('Gagal menyalin teks:', err);
+    });
+  };
+
   const [isLoading, setIsLoading] = useState(false);
   const [isPremiumPromptOpen, setIsPremiumPromptOpen] = useState(false);
   const [isMenuDropdownOpen, setIsMenuDropdownOpen] = useState(false);
@@ -518,19 +536,36 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
         throw new Error("Koneksi ditolak. Server backend sedang offline atau belum di-restart.");
       }
 
-      let resData;
+      let resData: any = null;
+      let rawText = "";
       try {
-        resData = await response.json();
-      } catch (jsonErr: any) {
-        throw new Error("Format respon server tidak valid (Unexpected end of JSON input). Hal ini terjadi karena Server belum di-restart setelah penambahan fitur Express, atau kunci GEMINI_API_KEY Anda belum dikonfigurasi.");
+        rawText = await response.text();
+        try {
+          resData = JSON.parse(rawText);
+        } catch {
+          resData = null;
+        }
+      } catch (readErr) {
+        resData = null;
       }
 
       if (!response.ok) {
-        const errorMsg = resData.error || "";
-        if (response.status === 503 || errorMsg.includes("UNAVAILABLE") || errorMsg.includes("503") || errorMsg.includes("high demand") || errorMsg.includes("temporary")) {
+        const errorMsg = resData?.error || rawText || "";
+        if (
+          response.status === 503 || 
+          errorMsg.includes("UNAVAILABLE") || 
+          errorMsg.includes("503") || 
+          errorMsg.includes("high demand") || 
+          errorMsg.includes("temporary") ||
+          errorMsg.includes("busy")
+        ) {
           throw new Error("maaf saat ini tidak bisa mengajukan pertanyaan silahkan coba lagi nanti");
         }
-        throw new Error(resData.error || "Gagal menghubungi server Santri AI.");
+        throw new Error(errorMsg || "Gagal menghubungi server Santri AI.");
+      }
+
+      if (!resData) {
+        throw new Error("Format respon server tidak valid (Unexpected end of JSON input). Hal ini terjadi karena Server belum di-restart setelah penambahan fitur Express, atau kunci GEMINI_API_KEY Anda belum dikonfigurasi.");
       }
 
       // Append assistant answer
@@ -910,13 +945,33 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
                     className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-2xl p-3 shadow-3xs border ${
+                      className={`relative group max-w-[85%] rounded-2xl p-3 shadow-3xs border ${
                         msg.sender === 'user'
                           ? 'bg-emerald-50 border-emerald-150 text-[#064e3b] rounded-tr-2xs'
                           : 'bg-white border-slate-150 text-slate-800 rounded-tl-2xs'
                       }`}
                     >
-                      {renderMessageContent(msg)}
+                      {/* Copy Button (Always visible on mobile, hover on desktop) */}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyMessage(msg.id, msg.text)}
+                        className={`absolute top-1.5 right-1.5 p-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 cursor-pointer z-10 border border-slate-100 shadow-3xs ${
+                          msg.sender === 'user'
+                            ? 'bg-emerald-100/50 hover:bg-emerald-100 border-emerald-200 text-emerald-600 hover:text-emerald-800'
+                            : ''
+                        }`}
+                        title="Salin Pesan"
+                      >
+                        {copiedId === msg.id ? (
+                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+
+                      <div className="pr-4">
+                        {renderMessageContent(msg)}
+                      </div>
                       
                       {/* TIMESTAMP FOOTER */}
                       <span 

@@ -5,6 +5,37 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { db, auth, saveUserToFirestore, UserSchema, validatePassword, uploadToCloudinary } from '../../lib/authService';
 
+const isDefaultAvatar = (url: string | null | undefined): boolean => {
+  if (!url) return true;
+  const lowercaseUrl = url.toLowerCase();
+  return (
+    lowercaseUrl.includes('unsplash.com') ||
+    lowercaseUrl.includes('ui-avatars.com') ||
+    lowercaseUrl.includes('photo-') ||
+    lowercaseUrl.includes('gravatar.com')
+  );
+};
+
+const getAvatarInitial = (name: string): string => {
+  return name ? name.trim().charAt(0).toUpperCase() : 'U';
+};
+
+const getAvatarColorClass = (name: string): string => {
+  const initial = getAvatarInitial(name);
+  const colors = [
+    'bg-emerald-600 text-white',
+    'bg-teal-600 text-white',
+    'bg-indigo-600 text-white',
+    'bg-cyan-600 text-white',
+    'bg-amber-600 text-white',
+    'bg-rose-600 text-white',
+    'bg-sky-600 text-white',
+  ];
+  const charCode = initial.charCodeAt(0) || 0;
+  return colors[charCode % colors.length];
+};
+
+
 interface MenuAkunProfileProps {
   currentUser: UserSchema & { isLoggedIn: boolean };
   onUpdateSuccess: (updatedUser: UserSchema) => void;
@@ -210,14 +241,20 @@ export default function MenuAkunProfile({
             className="relative cursor-pointer group hover:scale-105 transition-all duration-150 inline-block"
           >
             <div className="h-20 w-20 rounded-full overflow-hidden border-4 border-emerald-500 shadow-md relative bg-slate-150">
-              <img 
-                src={avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'} 
-                alt="Avatar" 
-                className={`h-full w-full object-cover transition-all group-hover:brightness-90 ${
-                  isUploadingPhoto ? 'opacity-40 animate-pulse' : ''
-                }`}
-                referrerPolicy="no-referrer"
-              />
+              {isDefaultAvatar(avatarUrl) ? (
+                <div className={`h-full w-full flex items-center justify-center font-extrabold text-2xl select-none ${getAvatarColorClass(name)}`}>
+                  {getAvatarInitial(name)}
+                </div>
+              ) : (
+                <img 
+                  src={avatarUrl} 
+                  alt="Avatar" 
+                  className={`h-full w-full object-cover transition-all group-hover:brightness-90 ${
+                    isUploadingPhoto ? 'opacity-40 animate-pulse' : ''
+                  }`}
+                  referrerPolicy="no-referrer"
+                />
+              )}
               
               {isUploadingPhoto && (
                 <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white text-[10px] font-mono font-bold">
