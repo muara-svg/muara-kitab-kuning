@@ -15,12 +15,23 @@ import {
   ArrowUpRight,
   Users,
   Copy,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
 import { MOCK_KITABS } from '../data/mockData';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  query, 
+  where, 
+  orderBy, 
+  writeBatch 
+} from 'firebase/firestore';
 import { firestore } from '../lib/firebaseConfig';
 import { indexedDbService } from '../lib/indexedDbService';
 import BahtsulMasail from './BahtsulMasail';
@@ -99,6 +110,124 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
   const [directProblemType, setDirectProblemType] = useState<string | null>(null);
   const [directCommentId, setDirectCommentId] = useState<string | null>(null);
   const [kitabCollection, setKitabCollection] = useState<any[]>([]);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  // Helper to save messages to Firestore
+  const saveMessageToFirestore = async (msgId: string, sender: 'user' | 'ai', text: string, timestamp: Date) => {
+    if (!userProfile?.id) return;
+    try {
+      await setDoc(doc(firestore, 'santri_ai_chats', msgId), {
+        userId: userProfile.id,
+        sender,
+        text,
+        timestamp: timestamp.toISOString()
+      });
+    } catch (err) {
+      console.error("[Santri AI] Gagal menyimpan pesan ke Firestore:", err);
+    }
+  };
+
+  // Load chat history from Firestore with automatic 14-day deletion cleanup (completely silent)
+  const loadChatHistory = async () => {
+    if (!userProfile?.id) return;
+    try {
+      // 1. Auto delete old chat history older than 14 days (336 hours)
+      const fourteenDaysAgo = new Date();
+      fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+      
+      const qOld = query(
+        collection(firestore, 'santri_ai_chats'),
+        where('userId', '==', userProfile.id),
+        where('timestamp', '<', fourteenDaysAgo.toISOString())
+      );
+      const oldSnap = await getDocs(qOld);
+      if (!oldSnap.empty) {
+        const batch = writeBatch(firestore);
+        oldSnap.docs.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+        await batch.commit();
+        console.log(`[Santri AI Database Clean] Berhasil menghapus otomatis ${oldSnap.size} pesan lama yang berusia lebih dari 14 hari.`);
+      }
+
+      // 2. Fetch active messages
+      const q = query(
+        collection(firestore, 'santri_ai_chats'),
+        where('userId', '==', userProfile.id),
+        orderBy('timestamp', 'asc')
+      );
+      const snap = await getDocs(q);
+      const historyMsgs: Message[] = [];
+      
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        historyMsgs.push({
+          id: docSnap.id,
+          sender: data.sender,
+          text: data.text,
+          timestamp: data.timestamp ? new Date(data.timestamp) : new Date()
+        });
+      });
+
+      const welcome: Message = {
+        id: 'welcome',
+        sender: 'ai',
+        text: "Assalamu'alaikum wr. wb. Saya **Santri AI**, asisten digital ahli kitab kuning dari aplikasi MUARA. Silakan tanyakan hal-hal keagamaan (fiqih, tasawuf, akidah, hadis, dll), saya akan merujuk langsung dari khazanah kitab-kitab salafiyah di dalam aplikasi MUARA saja.",
+        timestamp: new Date()
+      };
+
+      if (historyMsgs.length > 0) {
+        setMessages([welcome, ...historyMsgs]);
+      } else {
+        setMessages([welcome]);
+      }
+    } catch (err) {
+      console.error("[Santri AI] Gagal memuat riwayat chat dari Firestore:", err);
+    }
+  };
+
+  // Handle deleting all chat history for this user
+  const handleDeleteChatHistory = async () => {
+    const welcome: Message = {
+      id: 'welcome',
+      sender: 'ai',
+      text: "Assalamu'alaikum wr. wb. Saya **Santri AI**, asisten digital ahli kitab kuning dari aplikasi MUARA. Silakan tanyakan hal-hal keagamaan (fiqih, tasawuf, akidah, hadis, dll), saya akan merujuk langsung dari khazanah kitab-kitab salafiyah di dalam aplikasi MUARA saja.",
+      timestamp: new Date()
+    };
+
+    if (!userProfile?.id) {
+      setMessages([welcome]);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const q = query(
+        collection(firestore, 'santri_ai_chats'),
+        where('userId', '==', userProfile.id)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const batch = writeBatch(firestore);
+        snap.docs.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+        await batch.commit();
+      }
+      setMessages([welcome]);
+    } catch (err) {
+      console.error("[Santri AI] Gagal menghapus riwayat obrolan dari database:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load chat history on open
+  useEffect(() => {
+    if (isOpen && userProfile?.id) {
+      loadChatHistory();
+    }
+  }, [isOpen, userProfile?.id]);
 
   useEffect(() => {
     const handleBackButton = (e: any) => {
@@ -387,6 +516,51 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
         });
       } 
       // 2. Text based kitabs (sourceType === 'text')
+      else if (Array.isArray(kitab.pages) && kitab.pages.length > 0) {
+        kitab.pages.forEach((pageText: string, pageIdx: number) => {
+          if (!pageText) return;
+          // Split the specific page into paragraphs to get precise matching
+          const paragraphs = pageText.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 10);
+          paragraphs.forEach((para: string, paraIdx: number) => {
+            const textToSearch = `${kitab.title} ${para}`.toLowerCase();
+            let score = 0;
+            let matchedCount = 0;
+
+            wordStems.forEach(({ original, stemmed }) => {
+              let matchType = 0;
+              if (textToSearch.includes(original)) {
+                matchType = 2;
+              } else if (stemmed !== original && textToSearch.includes(stemmed)) {
+                matchType = 1;
+              }
+
+              if (matchType > 0) {
+                matchedCount++;
+                score += matchType === 2 ? 15 : 8;
+                const searchPattern = matchType === 2 ? original : stemmed;
+                const count = (textToSearch.match(new RegExp(searchPattern, 'gi')) || []).length;
+                score += count * (matchType === 2 ? 3 : 1);
+              }
+            });
+
+            if (matchedCount > 1) {
+              score += matchedCount * 10;
+            }
+
+            if (score > 0) {
+              passages.push({
+                kitabTitle: kitab.title,
+                author: kitab.author || 'Mufassir',
+                babName: 'Pasal Utama',
+                subName: `Halaman ${pageIdx + 1}, Paragraf ${paraIdx + 1}`,
+                content: para,
+                pageIdx: pageIdx, // 100% accurate page index
+                score: score
+              });
+            }
+          });
+        });
+      }
       else if (kitab.textBody) {
         const paragraphs = kitab.textBody.split('\n').map((p: string) => p.trim()).filter((p: string) => p.length > 10);
         paragraphs.forEach((para: string, paraIdx: number) => {
@@ -474,13 +648,15 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
 
     // Append user message
     const userMsgId = 'user-' + Date.now();
+    const userMsgTimestamp = new Date();
     const newMessages = [...messages, {
       id: userMsgId,
       sender: 'user' as const,
       text: userText,
-      timestamp: new Date()
+      timestamp: userMsgTimestamp
     }];
     setMessages(newMessages);
+    saveMessageToFirestore(userMsgId, 'user', userText, userMsgTimestamp);
 
     // --- SENSOR KATA KOTOR & AKHLAK MODERATION (Client-side fast feedback) ---
     const profanities = [
@@ -497,12 +673,15 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
 
     if (hasProfanity) {
       setTimeout(() => {
+        const modMsgId = 'moderated-' + Date.now();
+        const modMsgTimestamp = new Date();
         setMessages(prev => [...prev, {
-          id: 'moderated-' + Date.now(),
+          id: modMsgId,
           sender: 'ai',
           text: "Astagfirullahal'adzim, yuk gunakan bahasa yang baik dan santun dalam menuntut ilmu, Kak. Semoga Allah memberkahi lisan kita. Silakan tanyakan kembali dengan tutur kata yang baik ya.",
-          timestamp: new Date()
+          timestamp: modMsgTimestamp
         }]);
+        saveMessageToFirestore(modMsgId, 'ai', "Astagfirullahal'adzim, yuk gunakan bahasa yang baik dan santun dalam menuntut ilmu, Kak. Semoga Allah memberkahi lisan kita. Silakan tanyakan kembali dengan tutur kata yang baik ya.", modMsgTimestamp);
         setIsLoading(false);
       }, 600);
       return;
@@ -604,12 +783,16 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
       }
 
       // Append assistant answer
+      const aiMsgId = 'ai-' + Date.now();
+      const aiMsgTimestamp = new Date();
+      const aiMsgText = resData.text || "Maaf, terjadi gangguan koneksi ke server asisten.";
       setMessages(prev => [...prev, {
-        id: 'ai-' + Date.now(),
+        id: aiMsgId,
         sender: 'ai',
-        text: resData.text || "Maaf, terjadi gangguan koneksi ke server asisten.",
-        timestamp: new Date()
+        text: aiMsgText,
+        timestamp: aiMsgTimestamp
       }]);
+      saveMessageToFirestore(aiMsgId, 'ai', aiMsgText, aiMsgTimestamp);
     } catch (err: any) {
       console.error(err);
       const isJsonError = err.message.includes('JSON') || err.message.includes('JSON input');
@@ -915,6 +1098,59 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
         )}
       </AnimatePresence>
 
+      {/* -------------------- CONFIRM DELETE CHAT HISTORY MODAL -------------------- */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-3xs">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 max-w-sm w-full border border-slate-100 shadow-2xl relative text-center overflow-hidden"
+            >
+              <div className="absolute top-0 inset-x-0 h-1.5 bg-rose-500" />
+              
+              <button 
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="absolute top-4 right-4 p-1 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer border-none bg-transparent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="h-12 w-12 rounded-xl bg-rose-50 border border-rose-150 text-rose-600 flex items-center justify-center mx-auto mb-3 mt-2">
+                <Trash2 className="h-6 w-6" />
+              </div>
+
+              <h3 className="font-extrabold text-slate-800 text-base">Hapus Riwayat Chat?</h3>
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                Tindakan ini akan menghapus seluruh riwayat chat Anda dengan Santri AI secara permanen dari database.
+              </p>
+
+              <div className="mt-5 space-y-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsDeleteModalOpen(false);
+                    await handleDeleteChatHistory();
+                  }}
+                  className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs tracking-wide shadow-xs shrink-0 cursor-pointer flex items-center justify-center gap-1.5 border-none"
+                >
+                  Ya, Hapus Permanen <Trash2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 font-bold text-xs cursor-pointer bg-white"
+                >
+                  Batal
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* -------------------- INTERACTIVE EXPANDABLE CHAT DIALOGUE WINDOW -------------------- */}
       <AnimatePresence>
         {isOpen && !isMinimized && (
@@ -956,6 +1192,14 @@ export default function SantriAI({ userProfile, onOpenUpgradeModal }: SantriAIPr
                 
                 {/* WINDOW ACTION CONTROLS */}
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    className="p-1.5 hover:bg-white/10 rounded-lg text-emerald-100 hover:text-rose-200 transition-colors cursor-pointer border-none bg-transparent"
+                    title="Hapus Riwayat Chat"
+                  >
+                    <Trash2 className="h-4.5 w-4.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setIsMinimized(true)}

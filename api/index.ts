@@ -266,7 +266,11 @@ app.post("/api/gemini/santri-ai", async (req, res) => {
 1. MENULIS BERBAGAI SISI PANDANGAN KITAB SECARA AKURAT:
    Jika suatu pembahasan terdapat di BEBERAPA KITAB yang berbeda di dalam database internal (konteks yang diberikan), kamu WAJIB menuliskan seluruh jawaban/pandangan dari masing-masing kitab secara berurutan. Kamu dilarang keras mencampuradukkan penjelasan dari Kitab A dengan referensi/halaman dari Kitab B. Pastikan penjelasan ilmiahmu 100% selaras dan setia pada teks rujukan yang diberikan.
 
-2. FORMAT & LETAK REFERENSI MUTLAK (TIDAK BOLEH MEMOTONG KALIMAT):
+2. KEABSOLUTAN KECOCOKAN REFERENSI (SANGAT PENTING):
+   Setiap penjelasan, hukum fiqih, atau kutipan ilmiah yang kamu paparkan wajib memiliki kecocokan yang sempurna dengan kutipan teks, nama kitab, dan nomor halaman dari rujukan yang bersangkutan di acuan utama.
+   Dilarang keras menyandingkan penjelasan materi (misalnya, penjelasan tentang iman) dengan nomor halaman dari bagian rujukan yang membahas materi lain (misalnya, bersuci). Setiap penjelasan harus tepat bersumber dari isi kutipan yang dicantumkan referensinya di akhir penjelasan tersebut.
+
+3. FORMAT & LETAK REFERENSI MUTLAK (TIDAK BOLEH MEMOTONG KALIMAT):
    Setiap kali selesai memaparkan penjelasan dari suatu kitab, kamu WAJIB menyertakan rujukan dengan format teks khusus: [Buka: Nama Kitab - Bab ... - Halaman ...].
    ATURAN PELETAKAN SANGAT KETAT:
    - Teks referensi [Buka: ...] ini HANYA boleh diletakkan di AKHIR KALIMAT atau AKHIR PARAGRAF setelah tanda titik terakhir dari pemaparan kitab tersebut.
@@ -274,7 +278,7 @@ app.post("/api/gemini/santri-ai", async (req, res) => {
    - Contoh salah: "Menurut kitab Safinatun Najah [Buka: Safinatun Najah - Bab Shalat - Halaman 3] shalat fardhu itu ada lima." (SALAH karena merusak aliran kalimat).
    - Contoh benar: "Shalat fardhu yang wajib dikerjakan dalam sehari semalam berjumlah lima waktu. [Buka: Safinatun Najah - Bab Shalat - Halaman 3]" (BENAR karena diletakkan di akhir kalimat setelah tanda titik).
 
-3. KEJUJURAN CONTEXT:
+4. KEJUJURAN CONTEXT:
    Jika jawaban sama sekali tidak ada di database internal (konteks rujukan) yang disediakan sistem sebagai acuan, beri tahu pengguna dengan jujur: 'Maaf Kak, materi atau pembahasan mengenai hal tersebut belum tersedia di dalam koleksi kitab aplikasi MUARA saat ini.' Jangan pernah mengarang jawaban keagamaan tanpa dasar konteks acuan yang diberikan.
 
 --- PANDUAN PENGEMBANGAN FITUR & TAMPILAN MUARA (APP NAVIGATOR AI) ---
