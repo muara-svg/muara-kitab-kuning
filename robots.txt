@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://muara-kitabkuning.vercel.app/sitemap.xml
