@@ -206,6 +206,23 @@ export default function KitabReader({
     setCurrentPageIdx(initialPageIdx);
   }, [kitab.id, initialPageIdx]);
 
+  // Set default font size when book data loads to match admin's aesthetic design exactly
+  useEffect(() => {
+    if (currentKitabData?.fontSize) {
+      const sizeMap: Record<string, number> = {
+        sm: 13,
+        base: 15,
+        lg: 17,
+        xl: 20,
+        '2xl': 24,
+      };
+      const numericSize = sizeMap[currentKitabData.fontSize];
+      if (numericSize) {
+        setFontSize(numericSize);
+      }
+    }
+  }, [currentKitabData?.id, currentKitabData?.fontSize]);
+
   // Scroll content to top on page change
   useEffect(() => {
     if (readerScrollContainerRef.current) {
@@ -267,20 +284,24 @@ export default function KitabReader({
       if (needsCloudFetch) {
         setLoadingContent(true);
         // Pre-emptively load from local IndexedDB cache if available
+        let hasLocalCache = false;
         try {
           const localData = await indexedDbService.getKitab(kitab.id);
           if (localData && (localData.textBody || (localData.pages && localData.pages.length > 0))) {
-            console.log(`[MUARA Reader] Cache lokal terbaca untuk "${kitab.title}". Menghindari query cloud.`);
+            console.log(`[MUARA Reader] Cache lokal terbaca untuk "${kitab.title}".`);
             setCurrentKitabData(localData);
             setLoadedFromLocal(true);
             setLoadingContent(false);
-            return;
+            hasLocalCache = true;
           }
         } catch (localCheckErr) {
           console.warn('[MUARA Reader Cache Check] Gagal memeriksa IndexedDB cache:', localCheckErr);
         }
 
         try {
+          if (!hasLocalCache) {
+            setLoadingContent(true);
+          }
           const contentSnap = await getDoc(doc(firestore, 'kitab_contents', kitab.id));
           if (contentSnap.exists()) {
             const cData = contentSnap.data();
@@ -315,18 +336,17 @@ export default function KitabReader({
             
             // Auto cache with heavy body to IndexedDB quietly for offline stability!
             try {
-              const alreadySaved = await indexedDbService.isSaved(kitab.id);
-              if (!alreadySaved) {
-                console.log(`[Auto-Caching Merged Content] "${kitab.title}"...`);
-                await indexedDbService.saveKitab(merged);
-                setIsSavedOffline(true);
-              }
+              console.log(`[Auto-Caching Merged Content] "${kitab.title}"...`);
+              await indexedDbService.saveKitab(merged);
+              setIsSavedOffline(true);
             } catch (cacheErr) {
               console.warn('[Auto-Caching Merged Content Error]:', cacheErr);
             }
           } else {
-            setCurrentKitabData(kitab);
-            setLoadedFromLocal(false);
+            if (!hasLocalCache) {
+              setCurrentKitabData(kitab);
+              setLoadedFromLocal(false);
+            }
           }
         } catch (err: any) {
           const errMsg = err?.message || String(err);
@@ -335,8 +355,10 @@ export default function KitabReader({
           } else {
             console.error("Gagal mengambil isi teks kitab dari cloud:", err);
           }
-          setCurrentKitabData(kitab);
-          setLoadedFromLocal(false);
+          if (!hasLocalCache) {
+            setCurrentKitabData(kitab);
+            setLoadedFromLocal(false);
+          }
         } finally {
           setLoadingContent(false);
         }
@@ -717,12 +739,40 @@ public class MainActivity extends BridgeActivity {
                 {/* 2. FIRESTORE TEXT MODE (sourceType text body - LOADED PAGE BY PAGE) (Revisi Poin 1 & 2) */}
                 {isFirestoreText && (
                   <div className={`bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 md:p-9 shadow-xs ${isUserPremium ? 'select-text' : 'select-none'}`}>
-                    <div 
-                      className="text-slate-705 leading-relaxed text-justify whitespace-pre-line font-sans"
-                      style={{ fontSize: `${fontSize}px` }}
-                    >
-                      {textPages[currentPageIdx] || 'Selesai membaca.'}
-                    </div>
+                    {(() => {
+                      const pageContent = textPages[currentPageIdx] || '';
+                      
+                      const isArabicText = (text: string): boolean => {
+                        return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+                      };
+
+                      const dbDirection = currentKitabData?.direction || 'auto';
+                      const computedDirection = dbDirection === 'auto' 
+                        ? (isArabicText(pageContent) ? 'rtl' : 'ltr') 
+                        : dbDirection;
+                      const isRtl = computedDirection === 'rtl';
+
+                      const dbTextAlign = currentKitabData?.textAlign || 'justify';
+                      const alignClass = dbTextAlign === 'left' ? 'text-left' :
+                                         dbTextAlign === 'center' ? 'text-center' :
+                                         dbTextAlign === 'right' ? 'text-right' : 'text-justify';
+
+                      const dbLineHeight = currentKitabData?.lineHeight || 'relaxed';
+                      const leadingClass = dbLineHeight === 'normal' ? 'leading-normal' :
+                                           dbLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+
+                      const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
+                      
+                      return (
+                        <div 
+                          dir={computedDirection}
+                          className={`text-slate-800 whitespace-pre-line ${alignClass} ${leadingClass} ${familyClass}`}
+                          style={{ fontSize: `${fontSize}px` }}
+                        >
+                          {pageContent || 'Selesai membaca.'}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

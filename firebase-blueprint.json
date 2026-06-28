@@ -141,6 +141,46 @@
         "plans": { "type": "array" },
         "methods": { "type": "array" }
       }
+    },
+    "KitabContent": {
+      "title": "KitabContent",
+      "description": "Isi lengkap dari sebuah kitab kuning digital",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "isSegmented": { "type": "boolean" },
+        "chunkCount": { "type": "number" },
+        "totalPageCount": { "type": "number" },
+        "pages": { "type": "array" },
+        "textBody": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "isSegmented", "chunkCount", "updatedAt"]
+    },
+    "KitabContentChunk": {
+      "title": "KitabContentChunk",
+      "description": "Bagian/chunk lembaran halaman kitab untuk efisiensi transfer data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "kitabId": { "type": "string" },
+        "chunkIndex": { "type": "number" },
+        "pages": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "kitabId", "chunkIndex", "pages", "updatedAt"]
+    },
+    "SantriAIChat": {
+      "title": "SantriAIChat",
+      "description": "Riwayat percakapan Santri AI dengan asisten kecerdasan buatan",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "sender": { "type": "string", "enum": ["user", "ai"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "sender", "text", "timestamp"]
     }
   },
   "firestore": {
@@ -179,6 +219,14 @@
     "/configs/{configId}": {
       "schema": "Config",
       "description": "Dokumen konfigurasi kustom aplikasi seperti list membership dan metode pembayaran"
+    },
+    "/kitab_contents/{contentId}": {
+      "schema": "KitabContent",
+      "description": "Isi lengkap dari kitab kuning atau potongan segmen (chunk) datanya"
+    },
+    "/santri_ai_chats/{chatId}": {
+      "schema": "SantriAIChat",
+      "description": "Riwayat chat interaktif Santri AI"
     }
   }
 }

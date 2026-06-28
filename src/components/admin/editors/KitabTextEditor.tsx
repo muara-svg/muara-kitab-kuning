@@ -30,7 +30,20 @@ interface KitabTextEditorProps {
   kitabJenis: string;
   initialPages: string[];
   initialTextBody: string;
-  onSave: (pages: string[], textBody: string) => void;
+  initialTextAlign?: 'left' | 'center' | 'right' | 'justify';
+  initialDirection?: 'ltr' | 'rtl' | 'auto';
+  initialFontSize?: 'sm' | 'base' | 'lg' | 'xl' | '2xl';
+  initialLineHeight?: 'normal' | 'relaxed' | 'loose';
+  onSave: (
+    pages: string[], 
+    textBody: string, 
+    styles?: {
+      textAlign: 'left' | 'center' | 'right' | 'justify';
+      direction: 'ltr' | 'rtl' | 'auto';
+      fontSize: 'sm' | 'base' | 'lg' | 'xl' | '2xl';
+      lineHeight: 'normal' | 'relaxed' | 'loose';
+    }
+  ) => void;
   onSuccessMessage: (msg: string) => void;
 }
 
@@ -41,6 +54,10 @@ export default function KitabTextEditor({
   kitabJenis,
   initialPages,
   initialTextBody,
+  initialTextAlign,
+  initialDirection,
+  initialFontSize,
+  initialLineHeight,
   onSave,
   onSuccessMessage
 }: KitabTextEditorProps) {
@@ -48,7 +65,6 @@ export default function KitabTextEditor({
   const [activePageIndex, setActivePageIndex] = useState<number>(0);
   
   // Custom states for the new features
-  const [targetWordCount, setTargetWordCount] = useState<number>(200);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // Formatting options for perfect aesthetic customization
@@ -57,7 +73,15 @@ export default function KitabTextEditor({
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl' | '2xl'>('lg');
   const [lineHeight, setLineHeight] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollPageIntoView = (idx: number) => {
+    setActivePageIndex(idx);
+    setTimeout(() => {
+      const target = document.getElementById(`page-sheet-${idx}`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
 
   // Initialize editor pages when modal opens or initialPages changes
   useEffect(() => {
@@ -65,84 +89,39 @@ export default function KitabTextEditor({
       if (initialPages && initialPages.length > 0) {
         setEditorPages([...initialPages]);
       } else if (initialTextBody) {
-        setEditorPages(autoSplitTextByWords(initialTextBody, targetWordCount));
+        const paragraphs = initialTextBody.split('\n');
+        const chunks: string[] = [];
+        let current = '';
+        paragraphs.forEach(p => {
+          if ((current + '\n' + p).length > 1500) {
+            if (current.trim()) chunks.push(current.trim());
+            current = p;
+          } else {
+            current += (current ? '\n' : '') + p;
+          }
+        });
+        if (current.trim()) chunks.push(current.trim());
+        setEditorPages(chunks.length > 0 ? chunks : [initialTextBody]);
       } else {
         setEditorPages(['']);
       }
+      
+      // Load initial styles from props if available
+      if (initialTextAlign) setTextAlign(initialTextAlign);
+      if (initialDirection) setDirection(initialDirection);
+      if (initialFontSize) setFontSize(initialFontSize);
+      if (initialLineHeight) setLineHeight(initialLineHeight);
+      
       setActivePageIndex(0);
     }
-  }, [isOpen, initialPages, initialTextBody]);
+  }, [isOpen, initialPages, initialTextBody, initialTextAlign, initialDirection, initialFontSize, initialLineHeight]);
 
   // Helper to detect if text contains Arabic characters
   const isArabicText = (text: string): boolean => {
     return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
   };
 
-  // Get active page's text context
-  const activePageText = editorPages[activePageIndex] || '';
 
-  // Auto adjust height of the textarea to grow dynamically (preventing scroll inside the paper)
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      const newHeight = Math.max(380, textareaRef.current.scrollHeight);
-      textareaRef.current.style.height = `${newHeight}px`;
-    }
-  }, [activePageText, fontSize, lineHeight, isOpen, activePageIndex]);
-
-  // Helper to split text by word limits while preserving original whitespace (tabs, spaces, enters) exactly
-  const autoSplitTextByWords = (text: string, wordsPerPage: number): string[] => {
-    if (!text) return [''];
-    
-    // Split utilizing capturing parenthesized group so separators are fully preserved
-    const tokens = text.split(/(\s+)/);
-    const chunks: string[] = [];
-    let currentChunkTokens: string[] = [];
-    let currentWordCount = 0;
-
-    for (let i = 0; i < tokens.length; i++) {
-      const token = tokens[i];
-      if (i % 2 === 0) {
-        // Even indexes are word/content tokens
-        if (token !== '') {
-          currentWordCount++;
-        }
-        currentChunkTokens.push(token);
-      } else {
-        // Odd indexes are original whitespace characters (spaces, tabs, enters)
-        // If we have met or exceeded the word limit for this page AND there are more words left,
-        // we split clean at this boundary.
-        if (currentWordCount >= wordsPerPage && i + 1 < tokens.length) {
-          chunks.push(currentChunkTokens.join(''));
-          currentChunkTokens = [];
-          currentWordCount = 0;
-        } else {
-          currentChunkTokens.push(token);
-        }
-      }
-    }
-
-    if (currentChunkTokens.length > 0) {
-      chunks.push(currentChunkTokens.join(''));
-    }
-
-    // Clean leading/trailing whitespaces on page boundaries but keep all inner structure perfectly preserved
-    const trimmedChunks = chunks.map(c => c.trim()).filter(Boolean);
-    return trimmedChunks.length > 0 ? trimmedChunks : [''];
-  };
-
-  // Re-split the current overall text body based on the custom word limit
-  const handleAutoSplit = () => {
-    const fullText = editorPages.join('\n\n');
-    if (!fullText.trim()) {
-      onSuccessMessage('Teks masih kosong. Silakan isi terlebih dahulu.');
-      return;
-    }
-    const newlySplit = autoSplitTextByWords(fullText, targetWordCount);
-    setEditorPages(newlySplit);
-    setActivePageIndex(0);
-    onSuccessMessage(`Teks berhasil di-split ulang otomatis menjadi ${newlySplit.length} Halaman (Target ~${targetWordCount} kata per halaman). Semua enter dan baris bawaan dipertahankan dengan rapi.`);
-  };
 
   // Auto clean up spaces, multi-enters, tabs across all pages to make them pristine
   const handleCleanSpaces = () => {
@@ -203,26 +182,6 @@ export default function KitabTextEditor({
 
           {/* ACTIVE MANAGEMENT CONTROLS */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* WORD COUNT CUSTOM LIMIT SPLITTER */}
-            <div className="flex items-center gap-1.5 bg-emerald-950/80 p-1.5 px-3 rounded-xl border border-emerald-850">
-              <span className="text-[10px] font-bold text-emerald-300 uppercase">Jml Kata/Hal:</span>
-              <input 
-                type="number" 
-                value={targetWordCount} 
-                onChange={(e) => setTargetWordCount(Math.max(10, parseInt(e.target.value) || 200))}
-                className="w-12 bg-emerald-900 text-white font-mono text-[10px] font-bold text-center rounded border border-emerald-700/60 p-0.5 focus:outline-none"
-                title="Aturan Manual Jumlah Kata per Halaman untuk Autorapih"
-              />
-              <button
-                type="button"
-                onClick={handleAutoSplit}
-                className="flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-slate-950 px-2 py-0.5 rounded font-bold text-[9px] transition-all cursor-pointer shadow-2xs"
-                title="Pecah Ulang Halaman Berdasarkan Aturan Jumlah Kata"
-              >
-                <Scissors className="h-2.5 w-2.5" /> Auto-Split
-              </button>
-            </div>
-
             {/* AUTO SPACE SPARK ACTION */}
             <button
               type="button"
@@ -248,7 +207,12 @@ export default function KitabTextEditor({
               type="button"
               onClick={() => {
                 const trimmedPages = editorPages.map(p => p.trim());
-                onSave(trimmedPages, trimmedPages.join('\n\n'));
+                onSave(trimmedPages, trimmedPages.join('\n\n'), {
+                  textAlign,
+                  direction,
+                  fontSize,
+                  lineHeight
+                });
                 onSuccessMessage('Kanal halaman hasil suntingan berhasil dimuat.');
               }}
               className="flex items-center gap-1.5 bg-amber-450 hover:bg-amber-500 text-slate-900 font-extrabold text-[11px] px-3.5 py-1.5 rounded-xl shadow-md transition-all cursor-pointer"
@@ -264,9 +228,7 @@ export default function KitabTextEditor({
               <X className="h-3.5 w-3.5 inline mr-1" /> Batal
             </button>
           </div>
-        </div>
-
-        {/* LOWER MAIN AREA WITH 2 COLUMNS */}
+        </div>        {/* LOWER MAIN AREA WITH 2 COLUMNS */}
         <div className="flex-1 flex overflow-hidden">
           {/* SIDEBAR: MINI PAGE NAVIGATOR */}
           <div className="w-56 bg-slate-850 border-r border-slate-700/80 flex flex-col overflow-hidden text-slate-300">
@@ -278,7 +240,9 @@ export default function KitabTextEditor({
                   const updated = [...editorPages];
                   updated.push('');
                   setEditorPages(updated);
-                  setActivePageIndex(updated.length - 1);
+                  setTimeout(() => {
+                    scrollPageIntoView(updated.length - 1);
+                  }, 50);
                 }}
                 className="p-1 rounded bg-emerald-900/80 text-emerald-300 hover:bg-emerald-800 transition-colors cursor-pointer"
                 title="Tambah Halaman Baru di Akhir"
@@ -291,7 +255,7 @@ export default function KitabTextEditor({
               {editorPages.map((pageContent, idx) => (
                 <div 
                   key={idx}
-                  onClick={() => setActivePageIndex(idx)}
+                  onClick={() => scrollPageIntoView(idx)}
                   className={`group p-2.5 rounded-xl border transition-all cursor-pointer relative text-left ${
                     idx === activePageIndex 
                       ? 'bg-[#064e40] border-emerald-400 shadow-md text-white' 
@@ -316,7 +280,9 @@ export default function KitabTextEditor({
                           updated[idx] = updated[idx - 1];
                           updated[idx - 1] = temp;
                           setEditorPages(updated);
-                          setActivePageIndex(idx - 1);
+                          setTimeout(() => {
+                            scrollPageIntoView(idx - 1);
+                          }, 50);
                         }}
                         className="p-0.5 rounded hover:bg-slate-650 text-slate-200 disabled:opacity-30 cursor-pointer"
                         title="Naikkan posisi"
@@ -334,7 +300,9 @@ export default function KitabTextEditor({
                           updated[idx] = updated[idx + 1];
                           updated[idx + 1] = temp;
                           setEditorPages(updated);
-                          setActivePageIndex(idx + 1);
+                          setTimeout(() => {
+                            scrollPageIntoView(idx + 1);
+                          }, 50);
                         }}
                         className="p-0.5 rounded hover:bg-slate-650 text-slate-200 disabled:opacity-30 cursor-pointer"
                         title="Turunkan posisi"
@@ -357,7 +325,7 @@ export default function KitabTextEditor({
                         if (confirm(`Apakah Anda yakin ingin menghapus Halaman ${idx + 1}?`)) {
                           const updated = editorPages.filter((_, i) => i !== idx);
                           setEditorPages(updated);
-                          setActivePageIndex(Math.max(0, idx - 1));
+                          scrollPageIntoView(Math.max(0, idx - 1));
                         }
                       }}
                       className="absolute bottom-1.5 right-2 p-1 text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer animate-fade-in"
@@ -369,11 +337,13 @@ export default function KitabTextEditor({
                 </div>
               ))}
             </div>
-          </div>          {/* MAIN CONTENT WORKSPACE: MS WORD-STYLE SIMULATOR */}
-          <div className="flex-1 bg-slate-700/90 p-4 md:p-8 overflow-y-auto flex flex-col justify-start items-center relative scrollbar-thin scrollbar-thumb-slate-650">
+          </div>
+
+          {/* MAIN CONTENT WORKSPACE: MS WORD-STYLE SIMULATOR */}
+          <div className="flex-1 bg-slate-700/90 flex flex-col overflow-hidden relative">
             
             {/* TOOLBAR */}
-            <div className="bg-slate-800 text-slate-200 p-2.5 px-4 rounded-xl border border-slate-600 w-full max-w-2xl mb-4 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2.5 shadow-lg">
+            <div className="bg-slate-800 text-slate-200 p-2.5 px-4 border-b border-slate-600 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2.5 shadow-lg z-10">
               <div className="flex items-center gap-3">
                 <span className="font-mono text-[10px] uppercase font-bold text-amber-400">Lembar Aktif: Halaman {activePageIndex + 1} dari {editorPages.length}</span>
                 <span className="text-slate-600 hidden sm:inline">|</span>
@@ -383,7 +353,9 @@ export default function KitabTextEditor({
                     const updated = [...editorPages];
                     updated.splice(activePageIndex + 1, 0, '');
                     setEditorPages(updated);
-                    setActivePageIndex(activePageIndex + 1);
+                    setTimeout(() => {
+                      scrollPageIntoView(activePageIndex + 1);
+                    }, 50);
                   }}
                   className="flex items-center gap-1 bg-emerald-950 border border-emerald-800 px-2.5 py-1 rounded-md text-emerald-300 hover:bg-emerald-900 transition-colors cursor-pointer text-[10px] font-bold"
                 >
@@ -395,7 +367,7 @@ export default function KitabTextEditor({
                 <button
                   type="button"
                   disabled={activePageIndex === 0}
-                  onClick={() => setActivePageIndex(prev => prev - 1)}
+                  onClick={() => scrollPageIntoView(activePageIndex - 1)}
                   className="p-1 px-2.5 rounded bg-slate-700 hover:bg-slate-650 disabled:opacity-40 transition-colors cursor-pointer text-[10px]"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
@@ -404,7 +376,7 @@ export default function KitabTextEditor({
                 <button
                   type="button"
                   disabled={activePageIndex === editorPages.length - 1}
-                  onClick={() => setActivePageIndex(prev => prev + 1)}
+                  onClick={() => scrollPageIntoView(activePageIndex + 1)}
                   className="p-1 px-2.5 rounded bg-slate-700 hover:bg-slate-650 disabled:opacity-40 transition-colors cursor-pointer text-[10px]"
                 >
                   <ChevronRight className="h-3.5 w-3.5" />
@@ -412,127 +384,12 @@ export default function KitabTextEditor({
               </div>
             </div>
 
-            {/* SIMULATED PAPER SHEET (A4 STYLE PORTRAIT) - HEIGHT AUTO TO LET IT EXPAND VERTICALLY */}
-            <div className="bg-white max-w-2xl w-full h-auto min-h-[500px] p-6 md:p-10 rounded-2xl border border-slate-650 shadow-2xl relative flex flex-col transition-all mb-4">
+            {/* SCROLLABLE SHEETS CONTAINER */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 flex flex-col items-center scrollbar-thin scrollbar-thumb-slate-650">
               
-              {/* WORD-PROCESSOR HEADER METADATA & ARABIC DETECTION SHIELD */}
-              <div className="flex flex-wrap items-center justify-between border-b pb-2 mb-4 border-slate-150 font-mono text-[9px] text-slate-400 gap-2 select-none">
-                <span className="uppercase tracking-wide">MUARA MULTI-PAGE MANUSCRIPT PROCESSOR</span>
-                <div className="flex items-center gap-2">
-                  <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full text-[8.5px] font-bold uppercase">Tipe: {kitabJenis}</span>
-                  {isArabicText(activePageText) && (
-                    <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold animate-pulse">✨ Terdeteksi Tulisan Arab</span>
-                  )}
-                </div>
-              </div>
-
-              {/* DYNAMIC EDITING CONTROLS FOR PREMIUM ARABIC / INDONESIAN LAYOUTS */}
-              <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-2 mb-4 flex flex-wrap items-center justify-between gap-2.5 text-[10.5px]">
-                {/* DIRECTIVITY & ALIGNMENT */}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Rata:</span>
-                  <div className="flex rounded-md bg-slate-205 p-0.5 border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setTextAlign('left')}
-                      className={`p-1 rounded cursor-pointer ${textAlign === 'left' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-                      title="Rata Kiri"
-                    >
-                      <AlignLeft className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTextAlign('center')}
-                      className={`p-1 rounded cursor-pointer ${textAlign === 'center' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-                      title="Rata Tengah (Tafsir/Syi'ir)"
-                    >
-                      <AlignCenter className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTextAlign('right')}
-                      className={`p-1 rounded cursor-pointer ${textAlign === 'right' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-                      title="Rata Kanan (Sangat cocok untuk Hadis/Arab murni)"
-                    >
-                      <AlignRight className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTextAlign('justify')}
-                      className={`p-1 rounded cursor-pointer ${textAlign === 'justify' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
-                      title="Rata Kanan-Kiri"
-                    >
-                      <AlignJustify className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* DIRECTION MODE */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Arah:</span>
-                  <div className="flex rounded-md bg-slate-205 p-0.5 border border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setDirection('auto')}
-                      className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'auto' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
-                      title="Otomatis menyesuaikan karakter bahasa"
-                    >
-                      Auto
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDirection('ltr')}
-                      className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'ltr' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
-                      title="Left-to-Right (Latin / Terjemahan)"
-                    >
-                      LTR
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDirection('rtl')}
-                      className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'rtl' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
-                      title="Right-to-Left (Arab / Pegon)"
-                    >
-                      RTL
-                    </button>
-                  </div>
-                </div>
-
-                {/* FONT SIZE SELECTION */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Ukuran:</span>
-                  <select
-                    value={fontSize}
-                    onChange={(e) => setFontSize(e.target.value as any)}
-                    className="bg-white border border-slate-200 rounded p-1 text-[10px] font-sans font-medium focus:outline-none text-slate-700 cursor-pointer"
-                  >
-                    <option value="sm">Kecil (13px)</option>
-                    <option value="base">Normal (15px)</option>
-                    <option value="lg">Sedang (17px)</option>
-                    <option value="xl">Besar (20px)</option>
-                    <option value="2xl">Ekstra Besar (24px)</option>
-                  </select>
-                </div>
-
-                {/* LINE HEIGHT SPACING */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Baris:</span>
-                  <select
-                    value={lineHeight}
-                    onChange={(e) => setLineHeight(e.target.value as any)}
-                    className="bg-white border border-slate-200 rounded p-1 text-[10px] font-sans font-medium focus:outline-none text-slate-700 cursor-pointer"
-                  >
-                    <option value="normal">Kompak</option>
-                    <option value="relaxed">Standard (Relaks)</option>
-                    <option value="loose">Renggang (Khusus Arab)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* ACTIVE PAGE CONTENT AREA WITH THE AUTO-GROWING CAPABILITY */}
-              {(() => {
+              {editorPages.map((pageContent, idx) => {
                 const computedDirection = direction === 'auto' 
-                  ? (isArabicText(activePageText) ? 'rtl' : 'ltr') 
+                  ? (isArabicText(pageContent) ? 'rtl' : 'ltr') 
                   : direction;
                 const isRtl = computedDirection === 'rtl';
 
@@ -548,52 +405,201 @@ export default function KitabTextEditor({
                 const leadingClass = lineHeight === 'normal' ? 'leading-normal' :
                                      lineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
 
-                const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
+                const familyClass = isRtl ? 'font-arabic tracking-wide animate-fade-in' : 'font-serif';
 
                 return (
-                  <div className="flex-1 flex flex-col relative w-full mb-1">
-                    <textarea
-                      ref={textareaRef}
-                      value={activePageText}
-                      onChange={(e) => {
-                        const updated = [...editorPages];
-                        updated[activePageIndex] = e.target.value;
-                        setEditorPages(updated);
-                      }}
-                      dir={computedDirection}
-                      placeholder="Mulai mengetik atau menyalin hadis, terjemahan, atau penjelasan kitab untuk halaman ini..."
-                      style={{ overflowY: 'hidden' }}
-                      className={`w-full min-h-[380px] p-4 resize-none outline-none focus:outline-none bg-slate-50/50 rounded-xl border border-dashed border-slate-200 focus:border-emerald-300 focus:bg-white transition-all font-medium text-slate-850 ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
-                    />
+                  <div 
+                    key={idx}
+                    id={`page-sheet-${idx}`}
+                    onClick={() => setActivePageIndex(idx)}
+                    className={`bg-white max-w-2xl w-full h-auto min-h-[600px] p-6 md:p-10 rounded-2xl border transition-all relative flex flex-col shrink-0 shadow-xl ${
+                      idx === activePageIndex 
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/10' 
+                        : 'border-slate-350 hover:border-slate-400'
+                    }`}
+                  >
+                    {/* WORD-PROCESSOR HEADER METADATA & ARABIC DETECTION SHIELD */}
+                    <div className="flex flex-wrap items-center justify-between border-b pb-2 mb-4 border-slate-150 font-mono text-[9px] text-slate-400 gap-2 select-none">
+                      <span className="uppercase tracking-wide font-bold text-emerald-800 font-sans">HALAMAN {idx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full text-[8.5px] font-bold uppercase font-sans">Tipe: {kitabJenis}</span>
+                        {isArabicText(pageContent) && (
+                          <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold font-sans">✨ Terdeteksi Tulisan Arab</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* DYNAMIC EDITING CONTROLS (Only visible on active page sheet for clean focus) */}
+                    {idx === activePageIndex && (
+                      <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-2 mb-4 flex flex-wrap items-center justify-between gap-2.5 text-[10.5px] animate-fade-in">
+                        {/* DIRECTIVITY & ALIGNMENT */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Rata:</span>
+                          <div className="flex rounded-md bg-slate-205 p-0.5 border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setTextAlign('left')}
+                              className={`p-1 rounded cursor-pointer ${textAlign === 'left' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Kiri"
+                            >
+                              <AlignLeft className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTextAlign('center')}
+                              className={`p-1 rounded cursor-pointer ${textAlign === 'center' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Tengah (Tafsir/Syi'ir)"
+                            >
+                              <AlignCenter className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTextAlign('right')}
+                              className={`p-1 rounded cursor-pointer ${textAlign === 'right' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Kanan (Sangat cocok untuk Hadis/Arab murni)"
+                            >
+                              <AlignRight className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTextAlign('justify')}
+                              className={`p-1 rounded cursor-pointer ${textAlign === 'justify' ? 'bg-white text-emerald-850 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Kanan-Kiri"
+                            >
+                              <AlignJustify className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* DIRECTION MODE */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Arah:</span>
+                          <div className="flex rounded-md bg-slate-205 p-0.5 border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setDirection('auto')}
+                              className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'auto' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
+                              title="Otomatis menyesuaikan karakter bahasa"
+                            >
+                              Auto
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDirection('ltr')}
+                              className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'ltr' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
+                              title="Left-to-Right (Latin / Terjemahan)"
+                            >
+                              LTR
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDirection('rtl')}
+                              className={`px-1.5 py-0.5 text-[9px] rounded-sm font-bold cursor-pointer transition-all ${direction === 'rtl' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-500'}`}
+                              title="Right-to-Left (Arab / Pegon)"
+                            >
+                              RTL
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* FONT SIZE SELECTION */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Ukuran:</span>
+                          <select
+                            value={fontSize}
+                            onChange={(e) => setFontSize(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded p-1 text-[10px] font-sans font-medium focus:outline-none text-slate-700 cursor-pointer"
+                          >
+                            <option value="sm">Kecil (13px)</option>
+                            <option value="base">Normal (15px)</option>
+                            <option value="lg">Sedang (17px)</option>
+                            <option value="xl">Besar (20px)</option>
+                            <option value="2xl">Ekstra Besar (24px)</option>
+                          </select>
+                        </div>
+
+                        {/* LINE HEIGHT SPACING */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase font-mono mr-1">Baris:</span>
+                          <select
+                            value={lineHeight}
+                            onChange={(e) => setLineHeight(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded p-1 text-[10px] font-sans font-medium focus:outline-none text-slate-700 cursor-pointer"
+                          >
+                            <option value="normal">Kompak</option>
+                            <option value="relaxed">Standard (Relaks)</option>
+                            <option value="loose">Renggang (Khusus Arab)</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ACTIVE PAGE CONTENT AREA WITH THE AUTO-GROWING CAPABILITY */}
+                    <div className="flex-1 flex flex-col relative w-full mb-1">
+                      {idx === activePageIndex ? (
+                        <textarea
+                          value={pageContent}
+                          onChange={(e) => {
+                            const updated = [...editorPages];
+                            updated[idx] = e.target.value;
+                            setEditorPages(updated);
+                            
+                            // Auto adjust height inline on type
+                            e.target.style.height = 'auto';
+                            e.target.style.height = `${e.target.scrollHeight}px`;
+                          }}
+                          onFocus={() => setActivePageIndex(idx)}
+                          ref={(el) => {
+                            if (el) {
+                              // Adjust height on initial render
+                              el.style.height = 'auto';
+                              el.style.height = `${Math.max(380, el.scrollHeight)}px`;
+                            }
+                          }}
+                          dir={computedDirection}
+                          placeholder={`Mulai mengetik atau menyalin untuk halaman ${idx + 1}...`}
+                          style={{ overflowY: 'hidden' }}
+                          className={`w-full min-h-[380px] p-4 resize-none outline-none focus:outline-none bg-slate-50/50 rounded-xl border border-dashed border-slate-205 focus:border-emerald-300 focus:bg-white transition-all font-medium text-slate-850 ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
+                        />
+                      ) : (
+                        <div
+                          onClick={() => setActivePageIndex(idx)}
+                          dir={computedDirection}
+                          className={`w-full min-h-[380px] p-4 bg-slate-50/20 rounded-xl border border-dashed border-slate-150 whitespace-pre-wrap cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-all font-medium text-slate-850 select-text ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
+                        >
+                          {pageContent || <span className="text-slate-400 italic font-sans text-xs">Halaman kosong. Klik untuk mengetik...</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* WORD-PROCESSOR FOOTER METADATA */}
+                    <div className="flex items-center justify-between border-t pt-3 mt-4 border-slate-100 font-mono text-[9.5px] text-slate-400 select-none">
+                      <span className="font-sans">Halaman {idx + 1} dari {editorPages.length}</span>
+                      <span className="font-sans">{pageContent.trim().split(/\s+/).filter(Boolean).length || 0} Kata</span>
+                    </div>
+
+                    {/* MINI WATERMARK EFFECT */}
+                    <div className="absolute right-10 bottom-14 opacity-[0.015] select-none pointer-events-none">
+                      <BookOpen className="h-36 w-36 text-[#064e40]" />
+                    </div>
                   </div>
                 );
-              })()}
+              })}
 
-              {/* WORD-PROCESSOR FOOTER METADATA */}
-              <div className="flex items-center justify-between border-t pt-3 mt-4 border-slate-100 font-mono text-[9.5px] text-slate-400 select-none">
-                <span>Halaman {activePageIndex + 1} dari {editorPages.length}</span>
-                <span>{editorPages[activePageIndex]?.trim().split(/\s+/).filter(Boolean).length || 0} Kata</span>
+              {/* HELP BANNER */}
+              <div className="mt-2 p-3.5 bg-slate-800/80 text-[10.5px] leading-relaxed text-slate-300 max-w-2xl w-full rounded-xl border border-slate-700 flex items-start gap-2.5">
+                <Sparkles className="h-3.5 w-3.5 text-amber-300 flex-shrink-0 mt-0.5 animate-pulse" />
+                <div>
+                  <strong className="text-amber-300">Tips Format & Penyuntingan Pintar:</strong> 
+                  <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-350">
+                    <li>Semua lembar halaman tersusun vertikal ke bawah mirip Microsoft Word. Klik nomor halaman di kiri untuk navigasi instan.</li>
+                    <li>Lembaran kertas di atas <span className="text-emerald-300 font-bold">akan memanjang otomatis ke bawah secara dinamis</span> saat Anda mengetik, sehingga Anda dapat melakukan scroll ruang halaman dengan leluasa.</li>
+                    <li>Tulisan Arab terdeteksi secara otomatis, mengaktifkan arah kanan-ke-kiri (RTL) dan font Arab murni berketinggian renggang agar syakal harakat hadis/ayat terlihat sangat jelas dan rapi.</li>
+                  </ul>
+                </div>
               </div>
 
-              {/* MINI WATERMARK EFFECT */}
-              <div className="absolute right-10 bottom-14 opacity-[0.015] select-none pointer-events-none">
-                <BookOpen className="h-36 w-36 text-[#064e40]" />
-              </div>
             </div>
-
-            {/* HELP BANNER */}
-            <div className="mt-2 p-3.5 bg-slate-800/80 text-[10.5px] leading-relaxed text-slate-300 max-w-2xl w-full rounded-xl border border-slate-700 flex items-start gap-2.5">
-              <Sparkles className="h-3.5 w-3.5 text-amber-300 flex-shrink-0 mt-0.5 animate-pulse" />
-              <div>
-                <strong className="text-amber-300">Tips Format & Penyuntingan Pintar:</strong> 
-                <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-350">
-                  <li>Tombol <span className="text-white bg-slate-700 px-1 rounded">Auto-Split</span> membagi teks berdasarkan hitungan kata, akan tetapi <span className="text-amber-300 font-bold">tetap mempertahankan format paragraf dan enter Anda</span> agar tidak berantakan.</li>
-                  <li>Lembaran kertas di atas <span className="text-emerald-300 font-bold">akan memanjang otomatis ke bawah secara dinamis</span> saat Anda mengetik, sehingga Anda dapat melakukan scroll ruang halaman dengan leluasa.</li>
-                  <li>Tulisan Arab terdeteksi secara otomatis, mengaktifkan arah kanan-ke-kiri (RTL) dan font Arab <span className="font-arabic font-bold text-amber-200">Amiri</span> berketinggian renggang agar syakal harakat hadis/ayat terlihat sangat jelas dan rapi.</li>
-                </ul>
-              </div>
-            </div>
-
           </div>
         </div>
       </motion.div>

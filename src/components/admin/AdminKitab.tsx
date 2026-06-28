@@ -48,6 +48,10 @@ export interface KitabItem {
   pages: string[];
   textBody?: string;
   jenisKitab?: 'terjemah' | 'matan' | 'arab';
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  direction?: 'ltr' | 'rtl' | 'auto';
+  fontSize?: 'sm' | 'base' | 'lg' | 'xl' | '2xl';
+  lineHeight?: 'normal' | 'relaxed' | 'loose';
 }
 
 interface AdminKitabProps {
@@ -92,6 +96,14 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
   // Word Editor states
   const [kitabPages, setKitabPages] = useState<string[]>([]);
   const [isWordEditorOpen, setIsWordEditorOpen] = useState(false);
+  const [editorTextAlign, setEditorTextAlign] = useState<'left' | 'center' | 'right' | 'justify'>('justify');
+  const [editorDirection, setEditorDirection] = useState<'ltr' | 'rtl' | 'auto'>('auto');
+  const [editorFontSize, setEditorFontSize] = useState<'sm' | 'base' | 'lg' | 'xl' | '2xl'>('lg');
+  const [editorLineHeight, setEditorLineHeight] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
+
+  const isArabicText = (text: string): boolean => {
+    return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+  };
 
   const convertTextToPages = (text: string): string[] => {
     if (!text) return [];
@@ -188,6 +200,10 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
           pages: d.pages || [],
           textBody: d.textBody || '',
           jenisKitab: d.jenisKitab || 'terjemah',
+          textAlign: d.textAlign || 'justify',
+          direction: d.direction || 'auto',
+          fontSize: d.fontSize || 'lg',
+          lineHeight: d.lineHeight || 'relaxed',
           createdAt: createdStr
         });
       });
@@ -290,7 +306,7 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     });
   };
 
-  const parsePdfToText = async (file: File): Promise<string> => {
+  const parsePdfToText = async (file: File): Promise<{ textBody: string; pages: string[] }> => {
     setPdfProcessingStatus('Memuat mesin pembaca teks PDF...');
     const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
@@ -299,33 +315,145 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const totalPages = pdf.numPages;
     
-    let compiledText = '';
+    const pages: string[] = [];
+    let textBody = '';
     
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       setPdfProcessingStatus(`Mengekstrak teks halaman ${pageNum} dari ${totalPages}...`);
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
+      const items = textContent.items as any[];
       
-      compiledText += `\n\n--- Halaman ${pageNum} ---\n\n` + pageText;
+      // Group items by vertical position to preserve exact lines and spatial layout
+      const lines: { [key: number]: any[] } = {};
+      const threshold = 5; // tolerance for same-line elements
+      
+      items.forEach((item) => {
+        if (!item.str || item.str.trim() === '') return;
+        const y = item.transform[5];
+        
+        let foundLineY = Object.keys(lines).find(key => Math.abs(Number(key) - y) < threshold);
+        if (foundLineY) {
+          lines[Number(foundLineY)].push(item);
+        } else {
+          lines[y] = [item];
+        }
+      });
+      
+      // Sort lines top-to-bottom (descending y)
+      const sortedY = Object.keys(lines)
+        .map(Number)
+        .sort((a, b) => b - a);
+        
+      const sortedLines = sortedY.map(y => {
+        // Sort items left-to-right (ascending x)
+        const lineItems = lines[y];
+        lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
+        return lineItems.map(item => item.str).join(' ');
+      });
+      
+      const pageText = sortedLines.join('\n').trim();
+      pages.push(pageText);
+      textBody += (textBody ? '\n\n' : '') + pageText;
     }
     
     setPdfProcessingStatus(`Selesai! Mengekstrak ${totalPages} halaman.`);
-    return compiledText.trim();
+    return { textBody, pages };
   };
 
-  const parseDocxToText = async (file: File): Promise<string> => {
+  const parseDocxToText = async (file: File): Promise<{ textBody: string; pages: string[] }> => {
     setPdfProcessingStatus('Memuat mesin pembaca berkas Word...');
     const mammoth = await loadMammothJs();
     const arrayBuffer = await file.arrayBuffer();
     
-    setPdfProcessingStatus('Mengonversi berkas Word (.docx) ke teks...');
-    const result = await mammoth.extractRawText({ arrayBuffer });
+    setPdfProcessingStatus('Mengonversi berkas Word (.docx) ke HTML...');
+    // Map Word page breaks to explicit <br class="pagebreak" />
+    const htmlResult = await mammoth.convertToHtml(
+      { arrayBuffer },
+      {
+        styleMap: [
+          "br[type='page'] => br.pagebreak"
+        ]
+      }
+    );
+    const htmlContent = htmlResult.value;
     
+    setPdfProcessingStatus('Memproses halaman dokumen secara akurat...');
+    const parser = new DOMParser();
+    const docObj = parser.parseFromString(htmlContent, 'text/html');
+    
+    // Check if the document has explicit page breaks
+    const hasPageBreaks = docObj.querySelector('br.pagebreak') !== null;
+    const pages: string[] = [];
+    
+    if (hasPageBreaks) {
+      // Traverse the DOM to separate text by the page break indicators
+      let currentPageText = '';
+      
+      const traverseNodes = (node: Node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+          if (el.tagName === 'BR' && el.classList.contains('pagebreak')) {
+            if (currentPageText.trim()) {
+              pages.push(currentPageText.trim());
+              currentPageText = '';
+            }
+            return;
+          }
+        }
+        
+        if (node.nodeType === Node.TEXT_NODE) {
+          currentPageText += node.textContent || '';
+        } else {
+          const isBlock = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'DIV'].includes((node as HTMLElement).tagName || '');
+          if (isBlock && currentPageText.length > 0 && !currentPageText.endsWith('\n')) {
+            currentPageText += '\n';
+          }
+          
+          node.childNodes.forEach(traverseNodes);
+          
+          if (isBlock && currentPageText.length > 0 && !currentPageText.endsWith('\n')) {
+            currentPageText += '\n';
+          }
+        }
+      };
+      
+      docObj.body.childNodes.forEach(traverseNodes);
+      
+      if (currentPageText.trim()) {
+        pages.push(currentPageText.trim());
+      }
+    } else {
+      // If no explicit page breaks are found, preserve paragraphs but group logically to keep layouts aligned
+      const paragraphs = Array.from(docObj.querySelectorAll('p, h1, h2, h3, h4, li'));
+      let currentPageText = '';
+      let currentWordCount = 0;
+      const WORDS_PER_PAGE = 350; // Balanced size for typical A4/Legal page density
+      
+      paragraphs.forEach((p) => {
+        const text = p.textContent?.trim() || '';
+        if (!text) return;
+        
+        const words = text.split(/\s+/).filter(Boolean).length;
+        
+        if (currentWordCount + words > WORDS_PER_PAGE && currentPageText !== '') {
+          pages.push(currentPageText.trim());
+          currentPageText = text;
+          currentWordCount = words;
+        } else {
+          currentPageText += (currentPageText ? '\n\n' : '') + text;
+          currentWordCount += words;
+        }
+      });
+      
+      if (currentPageText.trim()) {
+        pages.push(currentPageText.trim());
+      }
+    }
+    
+    const textBody = pages.join('\n\n');
     setPdfProcessingStatus('Konversi Word selesai!');
-    return result.value.trim();
+    return { textBody, pages };
   };
 
   const handleFileChangeForTextConversion = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -338,19 +466,36 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     setPdfUploadPercentage(0);
 
     try {
-      let resultText = '';
+      let result: { textBody: string; pages: string[] };
       if (extension === 'pdf') {
-        resultText = await parsePdfToText(file);
-      } else if (extension === 'docx') {
-        resultText = await parseDocxToText(file);
+        result = await parsePdfToText(file);
+      } else if (extension === 'docx' || extension === 'doc') {
+        result = await parseDocxToText(file);
       } else {
         throw new Error('Format berkas tidak didukung. Unggah PDF atau Word (.docx).');
       }
 
-      setKitabTextBody(resultText);
-      const converted = convertTextToPages(resultText);
-      setKitabPages(converted);
-      onSuccess(`Teks berkas berhasil diimpor (${resultText.split(/\s+/).length} kata, terbagi dalam ${converted.length} halaman). Silakan periksa di kotak teks.`);
+      setKitabTextBody(result.textBody);
+      setKitabPages(result.pages);
+
+      // Auto detect Arabic content to set perfect defaults
+      const isArabic = isArabicText(result.textBody);
+      if (isArabic) {
+        setEditorDirection('rtl');
+        setEditorTextAlign('right');
+        setEditorLineHeight('loose');
+        setEditorFontSize('lg');
+      } else {
+        setEditorDirection('ltr');
+        setEditorTextAlign('justify');
+        setEditorLineHeight('relaxed');
+        setEditorFontSize('base');
+      }
+      
+      // Auto open word editor for immediate editing layout
+      setIsWordEditorOpen(true);
+      
+      onSuccess(`Teks berkas berhasil dikonversi secara akurat sesuai halaman (${result.textBody.split(/\s+/).length} kata, terbagi dalam ${result.pages.length} halaman). Dialihkan langsung ke lembar edit teks.`);
     } catch (err: any) {
       console.error(err);
       onError(`Gagal mengonversi file: ${err.message}`);
@@ -426,6 +571,10 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         coverUrl: finalCoverUrl || 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=300',
         sourceType: 'text',
         jenisKitab: kitabJenis,
+        textAlign: editorTextAlign,
+        direction: editorDirection,
+        fontSize: editorFontSize,
+        lineHeight: editorLineHeight,
         pages: [], // Keep empty in metadata to avoid Firestore 1MB limits
         textBody: '', // Keep empty in metadata to avoid Firestore 1MB limits
         createdAt: isEditingKitabId ? serverTimestamp() : new Date().toISOString()
@@ -543,6 +692,10 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       setKitabTextBody('');
       setKitabPages([]);
       setKitabJenis('terjemah');
+      setEditorTextAlign('justify');
+      setEditorDirection('auto');
+      setEditorFontSize('lg');
+      setEditorLineHeight('relaxed');
       setKitabCoverFile(null);
       setKitabCoverPreview('');
       setIsEditingKitabId(null);
@@ -568,6 +721,10 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     setKitabCoverPreview(kitab.coverUrl || '');
     setKitabCoverFile(null);
     setKitabJenis(kitab.jenisKitab || 'terjemah');
+    setEditorTextAlign(kitab.textAlign || 'justify');
+    setEditorDirection(kitab.direction || 'auto');
+    setEditorFontSize(kitab.fontSize || 'lg');
+    setEditorLineHeight(kitab.lineHeight || 'relaxed');
     setPdfUploadPercentage(0);
     setPdfProcessingStatus('Memuat detail teks kitab...');
     setIsKitabModalOpen(true);
@@ -966,16 +1123,13 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                       </div>
                       <textarea
                         rows={6}
+                        readOnly
                         value={kitabTextBody}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setKitabTextBody(val);
-                          setKitabPages(convertTextToPages(val));
-                        }}
                         placeholder="Hasil teks akan dirender di sini..."
-                        className="w-full border p-2 rounded-xl text-slate-800 font-mono text-[10px] bg-white leading-relaxed"
+                        className="w-full border p-2.5 rounded-xl text-slate-800 font-mono text-[10px] bg-slate-100 leading-relaxed cursor-not-allowed select-all"
+                        title="Teks hasil konversi file (Gunakan tombol 'Edit Teks' di atas untuk menyunting per halaman)"
                       />
-                      <p className="text-[9.5px] text-emerald-600 font-bold">✓ Berkas berhasil dikodekan ke dalam memori. Anda bisa merapikan format teks sebelum menyimpan.</p>
+                      <p className="text-[9.5px] text-emerald-700 font-bold">✓ Berkas berhasil dikodekan. Klik tombol <span className="underline">Edit Teks</span> di atas untuk menyesuaikan, memilah, atau merapikan kata per halaman secara visual.</p>
                     </div>
                   )}
                 </div>
@@ -1046,9 +1200,19 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         kitabJenis={kitabJenis}
         initialPages={kitabPages}
         initialTextBody={kitabTextBody}
-        onSave={(pages, textBody) => {
+        initialTextAlign={editorTextAlign}
+        initialDirection={editorDirection}
+        initialFontSize={editorFontSize}
+        initialLineHeight={editorLineHeight}
+        onSave={(pages, textBody, styles) => {
           setKitabPages(pages);
           setKitabTextBody(textBody);
+          if (styles) {
+            setEditorTextAlign(styles.textAlign);
+            setEditorDirection(styles.direction);
+            setEditorFontSize(styles.fontSize);
+            setEditorLineHeight(styles.lineHeight);
+          }
           setIsWordEditorOpen(false);
         }}
         onSuccessMessage={(msg) => onSuccess(msg)}
