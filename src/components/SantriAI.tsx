@@ -31,7 +31,7 @@ import {
   where, 
   orderBy, 
   writeBatch 
-} from '../lib/customfirestore';
+} from '../lib/customFirestore';
 import { firestore } from '../lib/firebaseConfig';
 import { indexedDbService } from '../lib/indexedDbService';
 import BahtsulMasail from './BahtsulMasail';
