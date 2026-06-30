@@ -31,7 +31,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from 'firebase/firestore';
+} from '../../lib/customFirestore';
 import { uploadToCloudinaryDirect } from '../../lib/cloudinaryConfig';
 import KitabTextEditor from './editors/KitabTextEditor';
 
@@ -311,8 +311,13 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
     
-    setPdfProcessingStatus('Membaca katalog fisik PDF...');
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    setPdfProcessingStatus('Membaca katalog fisik PDF dengan filter bahasa Arab...');
+    // Menambahkan cMapUrl dan cMapPacked agar pdf.js dapat mendeteksi dan mendekode karakter Arab (RTL non-latin) secara sempurna
+    const pdf = await pdfjsLib.getDocument({ 
+      data: arrayBuffer,
+      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+      cMapPacked: true
+    }).promise;
     const totalPages = pdf.numPages;
     
     const pages: string[] = [];
@@ -342,13 +347,23 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
       
       // Sort lines top-to-bottom (descending y)
       const sortedY = Object.keys(lines)
-        .map(Number)
-        .sort((a, b) => b - a);
-        
+         .map(Number)
+         .sort((a, b) => b - a);
+         
       const sortedLines = sortedY.map(y => {
-        // Sort items left-to-right (ascending x)
         const lineItems = lines[y];
-        lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
+        
+        // Cek secara cerdas apakah potongan teks pada baris ini mengandung karakter Arab/RTL
+        const isLineRtl = lineItems.some(item => item.dir === 'rtl' || isArabicText(item.str));
+        
+        if (isLineRtl) {
+          // Untuk tulisan Arab, urutkan dari Kanan ke Kiri (koordinat X mengecil / descending)
+          lineItems.sort((a, b) => b.transform[4] - a.transform[4]);
+        } else {
+          // Untuk tulisan Latin, urutkan dari Kiri ke Kanan (koordinat X membesar / ascending)
+          lineItems.sort((a, b) => a.transform[4] - b.transform[4]);
+        }
+        
         return lineItems.map(item => item.str).join(' ');
       });
       

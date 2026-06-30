@@ -97,7 +97,9 @@ app.post("/api/kitab-contents", async (req, res) => {
 
     const docRef = doc(firestoreDb, "kitab_contents", id);
     const textToCompress = textBody || "";
-    const sizeInBytes = Buffer.byteLength(textToCompress, 'utf8');
+    const pagesArray = pages || [];
+    const pagesSerialized = JSON.stringify(pagesArray);
+    const sizeInBytes = Buffer.byteLength(textToCompress, 'utf8') + Buffer.byteLength(pagesSerialized, 'utf8');
 
     if (sizeInBytes > 300000) {
       console.log(`[Backend Storage] Kitab ${id} exceeds size limit (${sizeInBytes} bytes). Compressing and uploading package to Cloudinary...`);

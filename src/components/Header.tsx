@@ -210,7 +210,7 @@ export default function Header({
       },
       (error) => {
         if (!isCurrentRequest) return;
-        console.error("[MUARA GPS] Izin lokasi dibatasi atau GPS mati:", error);
+        console.warn("[MUARA GPS] Izin lokasi dibatasi atau GPS mati:", error);
         let verboseError = "Sinyal GPS gagal.";
         if (error.code === error.PERMISSION_DENIED) {
           verboseError = "Akses GPS ditolak. Memakai koordinat default.";

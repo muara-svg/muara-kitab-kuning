@@ -42,7 +42,7 @@ import {
   arrayUnion,
   arrayRemove,
   increment
-} from 'firebase/firestore';
+} from '../lib/customFirestore';
 import { firestore } from '../lib/firebaseConfig';
 import { indexedDbService } from '../lib/indexedDbService';
 import { MOCK_KITABS } from '../data/mockData';

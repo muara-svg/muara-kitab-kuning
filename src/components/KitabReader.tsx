@@ -28,7 +28,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { indexedDbService } from '../lib/indexedDbService';
 import { UserProfile } from '../types';
 import { firestore } from '../lib/firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from '../lib/customFirestore';
 
 interface KitabReaderProps {
   kitab: any; // Can be MOCK structured KitabKuning or Firestore KitabItem

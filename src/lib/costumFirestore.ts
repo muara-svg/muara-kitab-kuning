@@ -24,7 +24,14 @@ import {
   enableIndexedDbPersistence as originalEnableIndexedDbPersistence,
   initializeFirestore as originalInitializeFirestore,
   persistentLocalCache as originalPersistentLocalCache,
-  persistentMultipleTabManager as originalPersistentMultipleTabManager
+  persistentMultipleTabManager as originalPersistentMultipleTabManager,
+  addDoc as originalAddDoc,
+  updateDoc as originalUpdateDoc,
+  getDocs as originalGetDocs,
+  arrayUnion as originalArrayUnion,
+  arrayRemove as originalArrayRemove,
+  increment as originalIncrement,
+  writeBatch as originalWriteBatch
 } from 'firebase/firestore';
 
 // Export everything required by standard Firestore clients
@@ -42,6 +49,13 @@ export const enableIndexedDbPersistence = originalEnableIndexedDbPersistence;
 export const initializeFirestore = originalInitializeFirestore;
 export const persistentLocalCache = originalPersistentLocalCache;
 export const persistentMultipleTabManager = originalPersistentMultipleTabManager;
+export const addDoc = originalAddDoc;
+export const updateDoc = originalUpdateDoc;
+export const getDocs = originalGetDocs;
+export const arrayUnion = originalArrayUnion;
+export const arrayRemove = originalArrayRemove;
+export const increment = originalIncrement;
+export const writeBatch = originalWriteBatch;
 
 // Helper to determine the target backend API URL
 const getApiUrl = (subpath: string) => {
