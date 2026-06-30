@@ -13,7 +13,7 @@ import { INITIAL_NOTIFICATIONS, INITIAL_SEDEKAH_CAMPAIGNS, MOCK_KITABS } from '.
 import { Compass, HelpCircle, MapPin, Check, Sparkles, BookOpen, ShieldAlert, LogOut, Settings, ArrowLeft, BellRing } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getSessionUser, clearSessionUser, storeSessionUser } from './lib/authService';
-import { doc, setDoc, getDoc, updateDoc, onSnapshot, collection, getDocs } from './lib/customFirestore';
+import { doc, setDoc, getDoc, updateDoc, onSnapshot, collection, getDocs } from './lib/customfirestore';
 import { firestore } from './lib/firebaseConfig';
 import { indexedDbService } from './lib/indexedDbService';
 

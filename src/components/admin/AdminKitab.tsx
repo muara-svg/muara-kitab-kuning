@@ -31,7 +31,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from '../../lib/customFirestore';
+} from '../../lib/customfirestore';
 import { uploadToCloudinaryDirect } from '../../lib/cloudinaryConfig';
 import KitabTextEditor from './editors/KitabTextEditor';
 

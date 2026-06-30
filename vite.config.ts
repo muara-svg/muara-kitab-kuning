@@ -13,10 +13,10 @@ export default defineConfig(() => {
           if (
             source === 'firebase/firestore' && 
             importer && 
-            !importer.includes('customFirestore.ts') && 
+            !importer.includes('customfirestore.ts') && 
             !importer.includes('firebaseConfig.ts')
           ) {
-            return path.resolve(__dirname, 'src/lib/customFirestore.ts');
+            return path.resolve(__dirname, 'src/lib/customfirestore.ts');
           }
           return null;
         }
