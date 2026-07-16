@@ -206,6 +206,20 @@ export default function KitabReader({
     setCurrentPageIdx(initialPageIdx);
   }, [kitab.id, initialPageIdx]);
 
+  // Synchronize dynamic kitab prop updates from Firestore listener in real-time
+  useEffect(() => {
+    if (kitab) {
+      setCurrentKitabData(prev => {
+        return {
+          ...prev,
+          ...kitab,
+          pages: prev?.pages?.length ? prev.pages : (kitab.pages || []),
+          textBody: prev?.textBody ? prev.textBody : (kitab.textBody || '')
+        };
+      });
+    }
+  }, [kitab]);
+
   // Set default font size when book data loads to match admin's aesthetic design exactly
   useEffect(() => {
     if (currentKitabData?.fontSize) {
@@ -237,28 +251,30 @@ export default function KitabReader({
     syncDataSrc();
   }, [activeOffline, kitab.id]);
 
-  // FITUR OFFLINE OTOMATIS (Silent Ground Caching in background)
+  // FITUR OFFLINE OTOMATIS & SINKRONISASI REALTIME (Silent Ground Caching in background)
   // Ketika user sedang online dan membuka suatu kitab, Firebase / local cache 
-  // secara otomatis mengunduh dan menyimpan data halaman tersebut di latar belakang
+  // secara otomatis mengunduh, menyelaraskan, dan menyimpan data halaman teraktual
+  // serta preferensi visual (seperti rata tengah, ukuran font) di latar belakang.
   useEffect(() => {
     if (hasAccess && isOnline && !forceOfflineSimulation && currentKitabData && currentKitabData.id) {
       const runSilentAutoCache = async () => {
         try {
-          const alreadySaved = await indexedDbService.isSaved(currentKitabData.id);
-          if (!alreadySaved) {
-            console.log(`[Silent Caching] Menyimpan otomatis "${currentKitabData.title}" untuk akses offline...`);
+          // Selalu perbarui cache lokal agar format/desain teraktual tersinkron sempurna
+          const isFullyLoaded = currentKitabData.textBody || (currentKitabData.pages && currentKitabData.pages.length > 0) || currentKitabData.chapters;
+          if (isFullyLoaded) {
+            console.log(`[Silent Caching] Menyelaraskan format & konten "${currentKitabData.title}" secara realtime ke offline storage...`);
             await indexedDbService.saveKitab(currentKitabData);
             setIsSavedOffline(true);
           }
         } catch (err) {
-          console.warn('[Silent Caching] Gagal melakukan cache otomatis di latar belakang:', err);
+          console.warn('[Silent Caching] Gagal memperbarui cache otomatis:', err);
         }
       };
-      // Delay sedikit agar tidak mengganggu rendering awal
-      const timer = setTimeout(runSilentAutoCache, 1500);
+      // Delay sedikit agar tidak membebani UI thread saat rendering sedang aktif
+      const timer = setTimeout(runSilentAutoCache, 1200);
       return () => clearTimeout(timer);
     }
-  }, [currentKitabData?.id, isOnline, forceOfflineSimulation, hasAccess]);
+  }, [currentKitabData, isOnline, forceOfflineSimulation, hasAccess]);
 
   const checkOfflineStatus = async () => {
     const saved = await indexedDbService.isSaved(kitab.id);
@@ -328,6 +344,11 @@ export default function KitabReader({
 
             const merged = {
               ...kitab,
+              textAlign: cData.textAlign || kitab.textAlign || 'justify',
+              direction: cData.direction || kitab.direction || 'auto',
+              fontSize: cData.fontSize || kitab.fontSize || 'lg',
+              lineHeight: cData.lineHeight || kitab.lineHeight || 'relaxed',
+              jenisKitab: cData.jenisKitab || kitab.jenisKitab || 'terjemah',
               pages: finalPages,
               textBody: finalTextBody
             };

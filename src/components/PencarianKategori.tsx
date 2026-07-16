@@ -1076,18 +1076,21 @@ export default function PencarianKategori({
 
       {/* ----------------- SEPARATE READER: KITAB KUNING VIEW - EXQUISITE ----------------- */}
       <AnimatePresence>
-        {selectedKitab && (
-          <KitabReader
-            kitab={selectedKitab}
-            userProfile={userProfile}
-            initialPageIdx={selectedKitab.startWithPageIdx || 0}
-            onClose={() => setSelectedKitab(null)}
-            onTriggerUpgrade={() => {
-              setSelectedKitab(null);
-              onOpenProfile();
-            }}
-          />
-        )}
+        {selectedKitab && (() => {
+          const realtimeKitab = firestoreKitabs.find(k => k.id === selectedKitab.id) || selectedKitab;
+          return (
+            <KitabReader
+              kitab={realtimeKitab}
+              userProfile={userProfile}
+              initialPageIdx={selectedKitab.startWithPageIdx || 0}
+              onClose={() => setSelectedKitab(null)}
+              onTriggerUpgrade={() => {
+                setSelectedKitab(null);
+                onOpenProfile();
+              }}
+            />
+          );
+        })()}
       </AnimatePresence>
 
       {/* ----------------- SEPARATE READER: SURAH DETAILS VIEW ----------------- */}

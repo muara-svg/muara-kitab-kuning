@@ -16,7 +16,11 @@ import {
   FileText,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { firestore } from '../../lib/firebaseConfig';
@@ -1140,14 +1144,134 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                           <Edit2 className="h-2.5 w-2.5" /> Edit Teks
                         </button>
                       </div>
-                      <textarea
-                        rows={6}
-                        readOnly
-                        value={kitabTextBody}
-                        placeholder="Hasil teks akan dirender di sini..."
-                        className="w-full border p-2.5 rounded-xl text-slate-800 font-mono text-[10px] bg-slate-100 leading-relaxed cursor-not-allowed select-all"
-                        title="Teks hasil konversi file (Gunakan tombol 'Edit Teks' di atas untuk menyunting per halaman)"
-                      />
+
+                      {/* FORMATTING TOOLBAR */}
+                      <div className="bg-slate-100 border border-slate-200/80 rounded-xl p-2 flex flex-wrap items-center justify-between gap-3 text-[10.5px]">
+                        {/* ALIGNMENT */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Rata:</span>
+                          <div className="flex rounded-md bg-white p-0.5 border border-slate-250">
+                            <button
+                              type="button"
+                              onClick={() => setEditorTextAlign('left')}
+                              className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'left' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Kiri"
+                            >
+                              <AlignLeft className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditorTextAlign('center')}
+                              className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'center' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Tengah"
+                            >
+                              <AlignCenter className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditorTextAlign('right')}
+                              className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'right' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Kanan"
+                            >
+                              <AlignRight className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditorTextAlign('justify')}
+                              className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'justify' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                              title="Rata Kanan-Kiri"
+                            >
+                              <AlignJustify className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* DIRECTION */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Arah:</span>
+                          <div className="flex rounded-md bg-white p-0.5 border border-slate-250">
+                            <button
+                              type="button"
+                              onClick={() => setEditorDirection('auto')}
+                              className={`px-1.5 py-0.5 text-[8.5px] rounded font-bold cursor-pointer transition-all ${editorDirection === 'auto' ? 'bg-[#064e3b] text-white shadow-xs' : 'text-slate-500'}`}
+                            >
+                              Auto
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditorDirection('ltr')}
+                              className={`px-1.5 py-0.5 text-[8.5px] rounded font-bold cursor-pointer transition-all ${editorDirection === 'ltr' ? 'bg-[#064e3b] text-white shadow-xs' : 'text-slate-500'}`}
+                            >
+                              LTR
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditorDirection('rtl')}
+                              className={`px-1.5 py-0.5 text-[8.5px] rounded font-bold cursor-pointer transition-all ${editorDirection === 'rtl' ? 'bg-[#064e3b] text-white shadow-xs' : 'text-slate-500'}`}
+                            >
+                              RTL
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* FONT SIZE */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Ukuran:</span>
+                          <select
+                            value={editorFontSize}
+                            onChange={(e) => setEditorFontSize(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[9.5px] font-medium focus:outline-none text-slate-700 cursor-pointer"
+                          >
+                            <option value="sm">Kecil</option>
+                            <option value="base">Normal</option>
+                            <option value="lg">Sedang</option>
+                            <option value="xl">Besar</option>
+                            <option value="2xl">Ekstra Besar</option>
+                          </select>
+                        </div>
+
+                        {/* LINE HEIGHT */}
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Baris:</span>
+                          <select
+                            value={editorLineHeight}
+                            onChange={(e) => setEditorLineHeight(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[9.5px] font-medium focus:outline-none text-slate-700 cursor-pointer"
+                          >
+                            <option value="normal">Kompak</option>
+                            <option value="relaxed">Standard</option>
+                            <option value="loose">Renggang</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const computedTextAlignClass = editorTextAlign === 'left' ? 'text-left' :
+                                                       editorTextAlign === 'center' ? 'text-center' :
+                                                       editorTextAlign === 'right' ? 'text-right' : 'text-justify';
+                        const computedDirection = editorDirection === 'auto' 
+                          ? (isArabicText(kitabTextBody) ? 'rtl' : 'ltr') 
+                          : editorDirection;
+                        const computedLineHeightClass = editorLineHeight === 'normal' ? 'leading-normal' :
+                                                        editorLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+                        const computedFontSizeClass = editorFontSize === 'sm' ? 'text-xs' :
+                                                      editorFontSize === 'base' ? 'text-sm' :
+                                                      editorFontSize === 'lg' ? 'text-base' :
+                                                      editorFontSize === 'xl' ? 'text-lg' : 'text-xl';
+                        const computedFontFamilyClass = computedDirection === 'rtl' ? 'font-arabic tracking-wide' : 'font-sans';
+
+                        return (
+                          <textarea
+                            rows={6}
+                            readOnly
+                            dir={computedDirection}
+                            value={kitabTextBody}
+                            placeholder="Hasil teks akan dirender di sini..."
+                            className={`w-full border p-2.5 rounded-xl text-slate-800 bg-slate-100 cursor-not-allowed select-all transition-all duration-300 ${computedTextAlignClass} ${computedLineHeightClass} ${computedFontSizeClass} ${computedFontFamilyClass}`}
+                            title="Teks hasil konversi file (Gunakan tombol 'Edit Teks' di atas untuk menyunting per halaman)"
+                          />
+                        );
+                      })()}
                       <p className="text-[9.5px] text-emerald-700 font-bold">✓ Berkas berhasil dikodekan. Klik tombol <span className="underline">Edit Teks</span> di atas untuk menyesuaikan, memilah, atau merapikan kata per halaman secara visual.</p>
                     </div>
                   )}
@@ -1166,18 +1290,138 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
                       <Edit2 className="h-2.5 w-2.5" /> Edit Teks
                     </button>
                   </div>
-                  <textarea
-                    rows={6}
-                    required
-                    value={kitabTextBody}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setKitabTextBody(val);
-                      setKitabPages(convertTextToPages(val));
-                    }}
-                    placeholder="Tempel atau ketik naskah kitab kuning lengkap ribuan kalimat di sini..."
-                    className="w-full border p-2 rounded-xl text-slate-800 font-mono text-[10.5px] leading-relaxed"
-                  />
+
+                  {/* FORMATTING TOOLBAR */}
+                  <div className="bg-slate-100 border border-slate-200/80 rounded-xl p-2 flex flex-wrap items-center justify-between gap-3 text-[10.5px]">
+                    {/* ALIGNMENT */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Rata:</span>
+                      <div className="flex rounded-md bg-white p-0.5 border border-slate-250">
+                        <button
+                          type="button"
+                          onClick={() => setEditorTextAlign('left')}
+                          className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'left' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                          title="Rata Kiri"
+                        >
+                          <AlignLeft className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditorTextAlign('center')}
+                          className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'center' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                          title="Rata Tengah"
+                        >
+                          <AlignCenter className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditorTextAlign('right')}
+                          className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'right' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                          title="Rata Kanan"
+                        >
+                          <AlignRight className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditorTextAlign('justify')}
+                          className={`p-1 rounded cursor-pointer transition-all ${editorTextAlign === 'justify' ? 'bg-[#064e3b] text-white shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'}`}
+                          title="Rata Kanan-Kiri"
+                        >
+                          <AlignJustify className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* DIRECTION */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Arah:</span>
+                      <div className="flex rounded-md bg-white p-0.5 border border-slate-250">
+                        <button
+                          type="button"
+                          onClick={() => setEditorDirection('auto')}
+                          className={`px-1.5 py-0.5 text-[8.5px] rounded font-bold cursor-pointer transition-all ${editorDirection === 'auto' ? 'bg-[#064e3b] text-white shadow-xs' : 'text-slate-500'}`}
+                        >
+                          Auto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditorDirection('ltr')}
+                          className={`px-1.5 py-0.5 text-[8.5px] rounded font-bold cursor-pointer transition-all ${editorDirection === 'ltr' ? 'bg-[#064e3b] text-white shadow-xs' : 'text-slate-500'}`}
+                        >
+                          LTR
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditorDirection('rtl')}
+                          className={`px-1.5 py-0.5 text-[8.5px] rounded font-bold cursor-pointer transition-all ${editorDirection === 'rtl' ? 'bg-[#064e3b] text-white shadow-xs' : 'text-slate-500'}`}
+                        >
+                          RTL
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* FONT SIZE */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Ukuran:</span>
+                      <select
+                        value={editorFontSize}
+                        onChange={(e) => setEditorFontSize(e.target.value as any)}
+                        className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[9.5px] font-medium focus:outline-none text-slate-700 cursor-pointer"
+                      >
+                        <option value="sm">Kecil</option>
+                        <option value="base">Normal</option>
+                        <option value="lg">Sedang</option>
+                        <option value="xl">Besar</option>
+                        <option value="2xl">Ekstra Besar</option>
+                      </select>
+                    </div>
+
+                    {/* LINE HEIGHT */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Baris:</span>
+                      <select
+                        value={editorLineHeight}
+                        onChange={(e) => setEditorLineHeight(e.target.value as any)}
+                        className="bg-white border border-slate-200 rounded px-1 py-0.5 text-[9.5px] font-medium focus:outline-none text-slate-700 cursor-pointer"
+                      >
+                        <option value="normal">Kompak</option>
+                        <option value="relaxed">Standard</option>
+                        <option value="loose">Renggang</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const computedTextAlignClass = editorTextAlign === 'left' ? 'text-left' :
+                                                   editorTextAlign === 'center' ? 'text-center' :
+                                                   editorTextAlign === 'right' ? 'text-right' : 'text-justify';
+                    const computedDirection = editorDirection === 'auto' 
+                      ? (isArabicText(kitabTextBody) ? 'rtl' : 'ltr') 
+                      : editorDirection;
+                    const computedLineHeightClass = editorLineHeight === 'normal' ? 'leading-normal' :
+                                                    editorLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+                    const computedFontSizeClass = editorFontSize === 'sm' ? 'text-xs' :
+                                                  editorFontSize === 'base' ? 'text-sm' :
+                                                  editorFontSize === 'lg' ? 'text-base' :
+                                                  editorFontSize === 'xl' ? 'text-lg' : 'text-xl';
+                    const computedFontFamilyClass = computedDirection === 'rtl' ? 'font-arabic tracking-wide' : 'font-sans';
+
+                    return (
+                      <textarea
+                        rows={6}
+                        required
+                        dir={computedDirection}
+                        value={kitabTextBody}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setKitabTextBody(val);
+                          setKitabPages(convertTextToPages(val));
+                        }}
+                        placeholder="Tempel atau ketik naskah kitab kuning lengkap ribuan kalimat di sini..."
+                        className={`w-full border p-2 rounded-xl text-slate-800 transition-all duration-300 ${computedTextAlignClass} ${computedLineHeightClass} ${computedFontSizeClass} ${computedFontFamilyClass}`}
+                      />
+                    );
+                  })()}
                 </div>
               )}
 
