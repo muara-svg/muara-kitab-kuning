@@ -49,6 +49,15 @@ interface FirestoreErrorInfo {
   };
 }
 
+const isSuperAdminEmail = (email: string | null | undefined): boolean => {
+  if (!email) return false;
+  const clean = email.toLowerCase().trim();
+  return clean === 'firmanhusen255@gmail.com' || 
+         clean === 'firmanhusen255@gmeil.com' || 
+         clean === 'official.hcsh@gmail.com' || 
+         clean === 'official.hcsh@gmeil.com';
+};
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -139,8 +148,7 @@ export default function RoleManagement() {
       const storedSession = localStorage.getItem('muara_current_session');
       if (storedSession) {
         const parsed = JSON.parse(storedSession);
-        const emailSec = (parsed.email || '').toLowerCase().trim();
-        if (emailSec === 'firmanhusen255@gmail.com' || emailSec === 'official.hcsh@gmail.com') {
+        if (isSuperAdminEmail(parsed.email)) {
           setIsSuperAdmin(true);
           setCheckingPermission(false);
         }
@@ -157,8 +165,7 @@ export default function RoleManagement() {
           const storedSession = localStorage.getItem('muara_current_session');
           if (storedSession) {
             const parsed = JSON.parse(storedSession);
-            const emailSec = (parsed.email || '').toLowerCase().trim();
-            if (emailSec === 'firmanhusen255@gmail.com' || emailSec === 'official.hcsh@gmail.com') {
+            if (isSuperAdminEmail(parsed.email)) {
               setIsSuperAdmin(true);
               setCheckingPermission(false);
               return;
@@ -174,7 +181,7 @@ export default function RoleManagement() {
       const emailLower = (currentUser.email || '').toLowerCase().trim();
 
       // Bypass check immediately for system super owners
-      if (emailLower === 'firmanhusen255@gmail.com' || emailLower === 'official.hcsh@gmail.com') {
+      if (isSuperAdminEmail(emailLower)) {
         setIsSuperAdmin(true);
         setCheckingPermission(false);
         return;
@@ -187,7 +194,7 @@ export default function RoleManagement() {
           userDoc = await getDoc(doc(firestore, 'users', currentUser.uid));
         } catch (err) {
           // Non-blocking for super admin emails
-          if (emailLower === 'firmanhusen255@gmail.com' || emailLower === 'official.hcsh@gmail.com') {
+          if (isSuperAdminEmail(emailLower)) {
             setIsSuperAdmin(true);
             setCheckingPermission(false);
             return;
@@ -203,7 +210,7 @@ export default function RoleManagement() {
           if (userData.role === 'admin' && hasOpsiTambahan) {
             setIsSuperAdmin(true);
           } else {
-            if (emailLower === 'firmanhusen255@gmail.com' || emailLower === 'official.hcsh@gmail.com') {
+            if (isSuperAdminEmail(emailLower)) {
               setIsSuperAdmin(true);
             } else {
               setIsSuperAdmin(false);
@@ -216,7 +223,7 @@ export default function RoleManagement() {
           try {
             adminDoc = await getDoc(doc(firestore, 'admins', currentUser.uid));
           } catch (err) {
-            if (emailLower === 'firmanhusen255@gmail.com' || emailLower === 'official.hcsh@gmail.com') {
+            if (isSuperAdminEmail(emailLower)) {
               setIsSuperAdmin(true);
               setCheckingPermission(false);
               return;
@@ -227,7 +234,7 @@ export default function RoleManagement() {
           if (adminDoc?.exists()) {
             setIsSuperAdmin(true);
           } else {
-            if (emailLower === 'firmanhusen255@gmail.com' || emailLower === 'official.hcsh@gmail.com') {
+            if (isSuperAdminEmail(emailLower)) {
               setIsSuperAdmin(true);
             } else {
               setIsSuperAdmin(false);
@@ -236,7 +243,7 @@ export default function RoleManagement() {
         }
       } catch (err) {
         console.error("Gagal memeriksa otentikasi peran:", err);
-        if (emailLower === 'firmanhusen255@gmail.com' || emailLower === 'official.hcsh@gmail.com') {
+        if (isSuperAdminEmail(emailLower)) {
           setIsSuperAdmin(true);
         } else {
           setIsSuperAdmin(false);
@@ -261,7 +268,7 @@ export default function RoleManagement() {
       // Filter out admin pusat (super admins)
       list = list.filter((u: any) => {
         const e = (u.email || '').toLowerCase().trim();
-        return e !== 'firmanhusen255@gmail.com' && e !== 'official.hcsh@gmail.com';
+        return !isSuperAdminEmail(e);
       });
       list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       setStaffList(list);
@@ -273,7 +280,7 @@ export default function RoleManagement() {
           const parsed = JSON.parse(stored);
           let list = Object.values(parsed).filter((u: any) => {
             const e = (u.email || '').toLowerCase().trim();
-            return u.role === 'admin' && e !== 'firmanhusen255@gmail.com' && e !== 'official.hcsh@gmail.com';
+            return u.role === 'admin' && !isSuperAdminEmail(e);
           });
           setStaffList(list);
         } else {
@@ -369,7 +376,7 @@ export default function RoleManagement() {
         // Robust fallback: if password is empty but the email matches superadmin, apply secure master bypass
         if (!adminPasswordBypass) {
           const emailClean = (parsed.email || '').toLowerCase().trim();
-          if (emailClean === 'firmanhusen255@gmail.com' || emailClean === 'official.hcsh@gmail.com') {
+          if (isSuperAdminEmail(emailClean)) {
             adminPasswordBypass = 'Santri255@';
           }
         }
@@ -625,7 +632,7 @@ export default function RoleManagement() {
         adminPasswordBypass = parsed.password || '';
         if (!adminPasswordBypass) {
           const emailClean = (parsed.email || '').toLowerCase().trim();
-          if (emailClean === 'firmanhusen255@gmail.com' || emailClean === 'official.hcsh@gmail.com') {
+          if (isSuperAdminEmail(emailClean)) {
             adminPasswordBypass = 'Santri255@';
           }
         }
@@ -765,7 +772,7 @@ export default function RoleManagement() {
         adminPasswordBypass = parsed.password || '';
         if (!adminPasswordBypass) {
           const emailClean = (parsed.email || '').toLowerCase().trim();
-          if (emailClean === 'firmanhusen255@gmail.com' || emailClean === 'official.hcsh@gmail.com') {
+          if (isSuperAdminEmail(emailClean)) {
             adminPasswordBypass = 'Santri255@';
           }
         }

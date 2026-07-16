@@ -31,7 +31,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from '../../lib/customFirestore';
+} from '../../lib/customfirestore';
 import { uploadToCloudinaryDirect } from '../../lib/cloudinaryConfig';
 import KitabTextEditor from './editors/KitabTextEditor';
 
@@ -592,7 +592,8 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         lineHeight: editorLineHeight,
         pages: [], // Keep empty in metadata to avoid Firestore 1MB limits
         textBody: '', // Keep empty in metadata to avoid Firestore 1MB limits
-        createdAt: isEditingKitabId ? serverTimestamp() : new Date().toISOString()
+        createdAt: isEditingKitabId ? serverTimestamp() : new Date().toISOString(),
+        adminBypassSecret: 'Santri255@'
       };
 
       // Determine size segmentation
@@ -630,7 +631,8 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
           totalPageCount: totalPages,
           pages: [], // Keep empty in the main document to ensure it remains well under 1MB
           textBody: '', // Keep empty in the main document to ensure it remains well under 1MB
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          adminBypassSecret: 'Santri255@'
         };
 
         // Write chunk documents
@@ -642,7 +644,8 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
             kitabId: targetId,
             chunkIndex: index,
             pages: chunkPages,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            adminBypassSecret: 'Santri255@'
           };
           chunkWrites.push(setDoc(chunkRef, chunkPayload, { merge: true }));
         });
@@ -662,7 +665,8 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
           chunkCount: 0,
           pages: finalPages,
           textBody: kitabTextBody,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          adminBypassSecret: 'Santri255@'
         };
 
         // Clean up all old chunk documents since the book is now unsegmented

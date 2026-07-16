@@ -142,12 +142,18 @@ export const deleteDoc = async (reference: any) => {
     console.log('[Firestore Interceptor] Intercepted deleteDoc for kitab_contents ID:', id);
     
     try {
-      await fetch(getApiUrl(`/api/kitab-contents/${id}`), {
+      const response = await fetch(getApiUrl(`/api/kitab-contents/${id}`), {
         method: 'DELETE'
       });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Gagal menghapus content via Backend Proxy`);
+      }
     } catch (err) {
       console.warn('[Firestore Interceptor] Call to delete API failed:', err);
+      throw err;
     }
+    return; // Selesai, server backend sudah menghapus dokumen. Jangan jalankan direct client delete.
   }
   
   return originalDeleteDoc(reference);

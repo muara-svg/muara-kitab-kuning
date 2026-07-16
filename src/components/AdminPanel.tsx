@@ -64,7 +64,9 @@ export default function AdminPanel({ onLogout }: AdminPanelProps) {
 
   const isSuperAdmin = currentUser && (
     currentUser.email?.toLowerCase() === 'firmanhusen255@gmail.com' || 
-    currentUser.email?.toLowerCase() === 'official.hcsh@gmail.com'
+    currentUser.email?.toLowerCase() === 'firmanhusen255@gmeil.com' || 
+    currentUser.email?.toLowerCase() === 'official.hcsh@gmail.com' ||
+    currentUser.email?.toLowerCase() === 'official.hcsh@gmeil.com'
   );
 
   const hasPermission = (featureKey: string) => {

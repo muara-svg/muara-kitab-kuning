@@ -158,7 +158,11 @@ export default function PencarianKategori({
           textBody: data.textBody || '',
           coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=300',
           jenisKitab: data.jenisKitab || 'terjemah',
-          chapters: []
+          chapters: [],
+          textAlign: data.textAlign || 'justify',
+          direction: data.direction || 'auto',
+          fontSize: data.fontSize || 'lg',
+          lineHeight: data.lineHeight || 'relaxed',
         });
       });
 
@@ -186,7 +190,11 @@ export default function PencarianKategori({
                 textBody: lk.textBody || '',
                 coverUrl: lk.coverUrl || 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&q=80&w=300',
                 jenisKitab: lk.jenisKitab || 'terjemah',
-                chapters: []
+                chapters: [],
+                textAlign: lk.textAlign || 'justify',
+                direction: lk.direction || 'auto',
+                fontSize: lk.fontSize || 'lg',
+                lineHeight: lk.lineHeight || 'relaxed',
               });
             }
           });

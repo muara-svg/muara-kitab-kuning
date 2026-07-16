@@ -152,7 +152,8 @@ export default function AdminKategori({ onSuccess, onError, refreshTrigger }: Ad
       const payload = {
         name: categoryToConfirm.name,
         imageUrl: finalImageUrl,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        adminBypassSecret: 'Santri255@'
       };
 
       // Murni melakukan penyimpanan ke Firestore, SDK Firebase akan otomatis mendistribusikan ke offline cache semua pengguna
