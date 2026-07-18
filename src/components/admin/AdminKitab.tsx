@@ -387,11 +387,19 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     
     setPdfProcessingStatus('Mengonversi berkas Word (.docx) ke HTML...');
     // Map Word page breaks to explicit <br class="pagebreak" />
+    // Also map common Word styles to custom classes for better extraction layout
     const htmlResult = await mammoth.convertToHtml(
       { arrayBuffer },
       {
         styleMap: [
-          "br[type='page'] => br.pagebreak"
+          "br[type='page'] => br.pagebreak",
+          "p[style-name='Heading 1'] => h1:fresh",
+          "p[style-name='Heading 2'] => h2:fresh",
+          "p[style-name='Heading 3'] => h3:fresh",
+          "p[style-name='Center'] => p.text-center:fresh",
+          "p[style-name='Left'] => p.text-left:fresh",
+          "p[style-name='Right'] => p.text-right:fresh",
+          "p[style-name='Justify'] => p.text-justify:fresh"
         ]
       }
     );
@@ -405,69 +413,85 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
     const hasPageBreaks = docObj.querySelector('br.pagebreak') !== null;
     const pages: string[] = [];
     
+    // Helper to add a page properly formatted
+    const addPage = (html: string) => {
+      const trimmed = html.trim();
+      if (trimmed) {
+        pages.push(`<div class="word-content">${trimmed}</div>`);
+      }
+    };
+
+    let currentPageHtml = '';
+    let currentPageWords = 0;
+
     if (hasPageBreaks) {
-      // Traverse the DOM to separate text by the page break indicators
-      let currentPageText = '';
-      
-      const traverseNodes = (node: Node) => {
+      // Split by <br class="pagebreak">
+      Array.from(docObj.body.childNodes).forEach((node) => {
         if (node.nodeType === Node.ELEMENT_NODE) {
           const el = node as HTMLElement;
           if (el.tagName === 'BR' && el.classList.contains('pagebreak')) {
-            if (currentPageText.trim()) {
-              pages.push(currentPageText.trim());
-              currentPageText = '';
+            addPage(currentPageHtml);
+            currentPageHtml = '';
+            currentPageWords = 0;
+          } else if (el.querySelector('br.pagebreak')) {
+            const parts = el.innerHTML.split(/<br[^>]*class="pagebreak"[^>]*>/i);
+            if (parts.length > 1) {
+              const firstPartEl = el.cloneNode(false) as HTMLElement;
+              firstPartEl.innerHTML = parts[0];
+              currentPageHtml += firstPartEl.outerHTML;
+              addPage(currentPageHtml);
+              
+              for (let i = 1; i < parts.length - 1; i++) {
+                const midEl = el.cloneNode(false) as HTMLElement;
+                midEl.innerHTML = parts[i];
+                addPage(midEl.outerHTML);
+              }
+              
+              const lastEl = el.cloneNode(false) as HTMLElement;
+              lastEl.innerHTML = parts[parts.length - 1];
+              currentPageHtml = lastEl.outerHTML;
+            } else {
+              currentPageHtml += el.outerHTML;
             }
-            return;
+          } else {
+            currentPageHtml += el.outerHTML;
           }
-        }
-        
-        if (node.nodeType === Node.TEXT_NODE) {
-          currentPageText += node.textContent || '';
-        } else {
-          const isBlock = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'DIV'].includes((node as HTMLElement).tagName || '');
-          if (isBlock && currentPageText.length > 0 && !currentPageText.endsWith('\n')) {
-            currentPageText += '\n';
-          }
-          
-          node.childNodes.forEach(traverseNodes);
-          
-          if (isBlock && currentPageText.length > 0 && !currentPageText.endsWith('\n')) {
-            currentPageText += '\n';
-          }
-        }
-      };
-      
-      docObj.body.childNodes.forEach(traverseNodes);
-      
-      if (currentPageText.trim()) {
-        pages.push(currentPageText.trim());
-      }
-    } else {
-      // If no explicit page breaks are found, preserve paragraphs but group logically to keep layouts aligned
-      const paragraphs = Array.from(docObj.querySelectorAll('p, h1, h2, h3, h4, li'));
-      let currentPageText = '';
-      let currentWordCount = 0;
-      const WORDS_PER_PAGE = 350; // Balanced size for typical A4/Legal page density
-      
-      paragraphs.forEach((p) => {
-        const text = p.textContent?.trim() || '';
-        if (!text) return;
-        
-        const words = text.split(/\s+/).filter(Boolean).length;
-        
-        if (currentWordCount + words > WORDS_PER_PAGE && currentPageText !== '') {
-          pages.push(currentPageText.trim());
-          currentPageText = text;
-          currentWordCount = words;
-        } else {
-          currentPageText += (currentPageText ? '\n\n' : '') + text;
-          currentWordCount += words;
+        } else if (node.nodeType === Node.TEXT_NODE) {
+          currentPageHtml += node.textContent || '';
         }
       });
+      addPage(currentPageHtml);
+    } else {
+      // No explicit page breaks. Group elements logically by density.
+      // Word limit per page: ~350 words (balanced density for typical A4 page)
+      const WORDS_PER_PAGE = 350;
       
-      if (currentPageText.trim()) {
-        pages.push(currentPageText.trim());
-      }
+      Array.from(docObj.body.childNodes).forEach((node) => {
+        let nodeText = '';
+        let nodeHtml = '';
+        
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+          nodeText = el.textContent || '';
+          nodeHtml = el.outerHTML;
+        } else if (node.nodeType === Node.TEXT_NODE) {
+          nodeText = node.textContent || '';
+          nodeHtml = nodeText;
+        }
+        
+        const wordsInNode = nodeText.split(/\s+/).filter(Boolean).length;
+        
+        // If adding this node exceeds WORDS_PER_PAGE and we already have content, push current page
+        if (currentPageWords + wordsInNode > WORDS_PER_PAGE && currentPageHtml.trim() !== '') {
+          addPage(currentPageHtml);
+          currentPageHtml = nodeHtml;
+          currentPageWords = wordsInNode;
+        } else {
+          currentPageHtml += nodeHtml;
+          currentPageWords += wordsInNode;
+        }
+      });
+      addPage(currentPageHtml);
     }
     
     const textBody = pages.join('\n\n');

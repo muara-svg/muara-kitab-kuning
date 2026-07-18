@@ -66,6 +66,7 @@ export default function KitabTextEditor({
   
   // Custom states for the new features
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [editHtmlSource, setEditHtmlSource] = useState<boolean>(false);
 
   // Formatting options for perfect aesthetic customization
   const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right' | 'justify'>('justify');
@@ -344,7 +345,7 @@ export default function KitabTextEditor({
             
             {/* TOOLBAR */}
             <div className="bg-slate-800 text-slate-200 p-2.5 px-4 border-b border-slate-600 flex flex-col sm:flex-row items-center justify-between text-[11px] gap-2.5 shadow-lg z-10">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="font-mono text-[10px] uppercase font-bold text-amber-400">Lembar Aktif: Halaman {activePageIndex + 1} dari {editorPages.length}</span>
                 <span className="text-slate-600 hidden sm:inline">|</span>
                 <button
@@ -360,6 +361,20 @@ export default function KitabTextEditor({
                   className="flex items-center gap-1 bg-emerald-950 border border-emerald-800 px-2.5 py-1 rounded-md text-emerald-300 hover:bg-emerald-900 transition-colors cursor-pointer text-[10px] font-bold"
                 >
                   <PlusCircle className="h-3 w-3 text-emerald-450" /> Sisipkan Halaman Baru Setelah Ini
+                </button>
+                <span className="text-slate-600 hidden sm:inline">|</span>
+                {/* HTML Source Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setEditHtmlSource(prev => !prev)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${
+                    editHtmlSource 
+                      ? 'bg-amber-450 border-transparent text-slate-900' 
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-750'
+                  }`}
+                  title="Ganti antara mode visual instan dan kode sumber HTML murni"
+                >
+                  <Languages className="h-3.5 w-3.5" /> {editHtmlSource ? 'Mode Visual (WYSIWYG)' : 'Lihat Kode HTML'}
                 </button>
               </div>
 
@@ -537,38 +552,203 @@ export default function KitabTextEditor({
                     {/* ACTIVE PAGE CONTENT AREA WITH THE AUTO-GROWING CAPABILITY */}
                     <div className="flex-1 flex flex-col relative w-full mb-1">
                       {idx === activePageIndex ? (
-                        <textarea
-                          value={pageContent}
-                          onChange={(e) => {
-                            const updated = [...editorPages];
-                            updated[idx] = e.target.value;
-                            setEditorPages(updated);
-                            
-                            // Auto adjust height inline on type
-                            e.target.style.height = 'auto';
-                            e.target.style.height = `${e.target.scrollHeight}px`;
-                          }}
-                          onFocus={() => setActivePageIndex(idx)}
-                          ref={(el) => {
-                            if (el) {
-                              // Adjust height on initial render
-                              el.style.height = 'auto';
-                              el.style.height = `${Math.max(380, el.scrollHeight)}px`;
-                            }
-                          }}
-                          dir={computedDirection}
-                          placeholder={`Mulai mengetik atau menyalin untuk halaman ${idx + 1}...`}
-                          style={{ overflowY: 'hidden' }}
-                          className={`w-full min-h-[380px] p-4 resize-none outline-none focus:outline-none bg-slate-50/50 rounded-xl border border-dashed border-slate-205 focus:border-emerald-300 focus:bg-white transition-all font-medium text-slate-850 ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
-                        />
+                        (() => {
+                          const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
+                          
+                          if (isHtml && !editHtmlSource) {
+                            // WYSIWYG ContentEditable mode for HTML content
+                            return (
+                              <div className="relative w-full min-h-[380px] flex flex-col">
+                                <div className="absolute right-3 top-3 bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded text-[8.5px] font-bold z-10 select-none">
+                                  ✍️ Sunting Langsung (Visual WYSIWYG)
+                                </div>
+                                <style dangerouslySetInnerHTML={{ __html: `
+                                  .word-content table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                    margin-top: 14px;
+                                    margin-bottom: 14px;
+                                    font-size: 0.9em;
+                                  }
+                                  .word-content th, .word-content td {
+                                    border: 1.5px solid #cbd5e1;
+                                    padding: 10px 14px;
+                                    text-align: ${isRtl ? 'right' : 'left'};
+                                    vertical-align: middle;
+                                  }
+                                  .word-content th {
+                                    background-color: #f8fafc;
+                                    font-weight: 700;
+                                    color: #1e293b;
+                                  }
+                                  .word-content tr:nth-child(even) {
+                                    background-color: #f8fafc/50;
+                                  }
+                                  .word-content p {
+                                    margin-bottom: 10px;
+                                    text-align: inherit;
+                                  }
+                                  .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
+                                    font-weight: 800;
+                                    color: #0f172a;
+                                    margin-top: 20px;
+                                    margin-bottom: 10px;
+                                    line-height: 1.3;
+                                  }
+                                  .word-content h1 { font-size: 1.6em; }
+                                  .word-content h2 { font-size: 1.4em; }
+                                  .word-content h3 { font-size: 1.2em; }
+                                  .word-content h4 { font-size: 1.1em; }
+                                  .word-content ul, .word-content ol {
+                                    margin-left: 24px;
+                                    margin-bottom: 14px;
+                                    list-style-position: outside;
+                                  }
+                                  .word-content ul { list-style-type: disc; }
+                                  .word-content ol { list-style-type: decimal; }
+                                  .word-content li {
+                                    margin-bottom: 6px;
+                                  }
+                                  .word-content blockquote {
+                                    border-left: 4px solid #10b981;
+                                    padding-left: 16px;
+                                    margin: 16px 0;
+                                    color: #475569;
+                                    font-style: italic;
+                                  }
+                                  .word-content hr {
+                                    border: 0;
+                                    border-top: 2px solid #e2e8f0;
+                                    margin: 20px 0;
+                                  }
+                                `}} />
+                                <div
+                                  contentEditable
+                                  suppressContentEditableWarning
+                                  onInput={(e) => {
+                                    const updated = [...editorPages];
+                                    updated[idx] = e.currentTarget.innerHTML;
+                                    setEditorPages(updated);
+                                  }}
+                                  onBlur={(e) => {
+                                    const updated = [...editorPages];
+                                    updated[idx] = e.currentTarget.innerHTML;
+                                    setEditorPages(updated);
+                                  }}
+                                  dir={computedDirection}
+                                  className={`word-content w-full min-h-[380px] p-4 bg-white rounded-xl border border-dashed border-emerald-300 focus:border-emerald-500 outline-none focus:outline-none transition-all font-medium text-slate-850 ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
+                                  dangerouslySetInnerHTML={{ __html: pageContent }}
+                                />
+                              </div>
+                            );
+                          } else {
+                            // Standard Textarea mode for Plain Text or HTML raw code
+                            return (
+                              <textarea
+                                value={pageContent}
+                                onChange={(e) => {
+                                  const updated = [...editorPages];
+                                  updated[idx] = e.target.value;
+                                  setEditorPages(updated);
+                                  
+                                  // Auto adjust height inline on type
+                                  e.target.style.height = 'auto';
+                                  e.target.style.height = `${e.target.scrollHeight}px`;
+                                }}
+                                onFocus={() => setActivePageIndex(idx)}
+                                ref={(el) => {
+                                  if (el) {
+                                    el.style.height = 'auto';
+                                    el.style.height = `${Math.max(380, el.scrollHeight)}px`;
+                                  }
+                                }}
+                                dir={computedDirection}
+                                placeholder={isHtml ? `Sunting kode HTML halaman ${idx + 1}...` : `Mulai mengetik atau menyalin untuk halaman ${idx + 1}...`}
+                                style={{ overflowY: 'hidden' }}
+                                className={`w-full min-h-[380px] p-4 resize-none outline-none focus:outline-none bg-slate-50/50 rounded-xl border border-dashed border-slate-205 focus:border-emerald-300 focus:bg-white transition-all ${isHtml ? 'font-mono text-xs text-blue-900 leading-normal' : 'font-medium text-slate-850 ' + alignClass + ' ' + sizeClass + ' ' + leadingClass + ' ' + familyClass}`}
+                              />
+                            );
+                          }
+                        })()
                       ) : (
-                        <div
-                          onClick={() => setActivePageIndex(idx)}
-                          dir={computedDirection}
-                          className={`w-full min-h-[380px] p-4 bg-slate-50/20 rounded-xl border border-dashed border-slate-150 whitespace-pre-wrap cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-all font-medium text-slate-850 select-text ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
-                        >
-                          {pageContent || <span className="text-slate-400 italic font-sans text-xs">Halaman kosong. Klik untuk mengetik...</span>}
-                        </div>
+                        (() => {
+                          const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
+                          return (
+                            <div
+                              onClick={() => setActivePageIndex(idx)}
+                              dir={computedDirection}
+                              className={`w-full min-h-[380px] p-4 bg-slate-50/20 rounded-xl border border-dashed border-slate-150 cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-all font-medium text-slate-850 select-text ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
+                            >
+                              <style dangerouslySetInnerHTML={{ __html: `
+                                .word-content table {
+                                  width: 100%;
+                                  border-collapse: collapse;
+                                  margin-top: 14px;
+                                  margin-bottom: 14px;
+                                  font-size: 0.9em;
+                                }
+                                .word-content th, .word-content td {
+                                  border: 1.5px solid #cbd5e1;
+                                  padding: 10px 14px;
+                                  text-align: ${isRtl ? 'right' : 'left'};
+                                  vertical-align: middle;
+                                }
+                                .word-content th {
+                                  background-color: #f8fafc;
+                                  font-weight: 700;
+                                  color: #1e293b;
+                                }
+                                .word-content tr:nth-child(even) {
+                                  background-color: #f8fafc/50;
+                                }
+                                .word-content p {
+                                  margin-bottom: 10px;
+                                  text-align: inherit;
+                                }
+                                .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
+                                  font-weight: 800;
+                                  color: #0f172a;
+                                  margin-top: 20px;
+                                  margin-bottom: 10px;
+                                  line-height: 1.3;
+                                }
+                                .word-content h1 { font-size: 1.6em; }
+                                .word-content h2 { font-size: 1.4em; }
+                                .word-content h3 { font-size: 1.2em; }
+                                .word-content h4 { font-size: 1.1em; }
+                                .word-content ul, .word-content ol {
+                                  margin-left: 24px;
+                                  margin-bottom: 14px;
+                                  list-style-position: outside;
+                                }
+                                .word-content ul { list-style-type: disc; }
+                                .word-content ol { list-style-type: decimal; }
+                                .word-content li {
+                                  margin-bottom: 6px;
+                                }
+                                .word-content blockquote {
+                                  border-left: 4px solid #10b981;
+                                  padding-left: 16px;
+                                  margin: 16px 0;
+                                  color: #475569;
+                                  font-style: italic;
+                                }
+                                .word-content hr {
+                                  border: 0;
+                                  border-top: 2px solid #e2e8f0;
+                                  margin: 20px 0;
+                                }
+                              `}} />
+                              {isHtml ? (
+                                <div className="word-content" dangerouslySetInnerHTML={{ __html: pageContent }} />
+                              ) : (
+                                <div className="whitespace-pre-wrap">
+                                  {pageContent || <span className="text-slate-400 italic font-sans text-xs">Halaman kosong. Klik untuk mengetik...</span>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()
                       )}
                     </div>
 

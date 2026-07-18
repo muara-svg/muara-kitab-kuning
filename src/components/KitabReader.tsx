@@ -784,6 +784,80 @@ public class MainActivity extends BridgeActivity {
 
                       const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
                       
+                      const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
+                      
+                      if (isHtml) {
+                        return (
+                          <div dir={computedDirection}>
+                            <style dangerouslySetInnerHTML={{ __html: `
+                              .word-content table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-top: 14px;
+                                margin-bottom: 14px;
+                                font-size: 0.9em;
+                              }
+                              .word-content th, .word-content td {
+                                border: 1.5px solid #cbd5e1;
+                                padding: 10px 14px;
+                                text-align: ${isRtl ? 'right' : 'left'};
+                                vertical-align: middle;
+                              }
+                              .word-content th {
+                                background-color: #f8fafc;
+                                font-weight: 700;
+                                color: #1e293b;
+                              }
+                              .word-content tr:nth-child(even) {
+                                background-color: #f8fafc/50;
+                              }
+                              .word-content p {
+                                margin-bottom: 10px;
+                                text-align: inherit;
+                              }
+                              .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
+                                font-weight: 800;
+                                color: #0f172a;
+                                margin-top: 20px;
+                                margin-bottom: 10px;
+                                line-height: 1.3;
+                              }
+                              .word-content h1 { font-size: 1.6em; }
+                              .word-content h2 { font-size: 1.4em; }
+                              .word-content h3 { font-size: 1.2em; }
+                              .word-content h4 { font-size: 1.1em; }
+                              .word-content ul, .word-content ol {
+                                margin-left: 24px;
+                                margin-bottom: 14px;
+                                list-style-position: outside;
+                              }
+                              .word-content ul { list-style-type: disc; }
+                              .word-content ol { list-style-type: decimal; }
+                              .word-content li {
+                                margin-bottom: 6px;
+                              }
+                              .word-content blockquote {
+                                border-left: 4px solid #10b981;
+                                padding-left: 16px;
+                                margin: 16px 0;
+                                color: #475569;
+                                font-style: italic;
+                              }
+                              .word-content hr {
+                                border: 0;
+                                border-top: 2px solid #e2e8f0;
+                                margin: 20px 0;
+                              }
+                            `}} />
+                            <div 
+                              className={`text-slate-800 ${alignClass} ${leadingClass} ${familyClass}`}
+                              style={{ fontSize: `${fontSize}px` }}
+                              dangerouslySetInnerHTML={{ __html: pageContent }}
+                            />
+                          </div>
+                        );
+                      }
+
                       return (
                         <div 
                           dir={computedDirection}
