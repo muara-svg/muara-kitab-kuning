@@ -73,6 +73,33 @@ export default function KitabReader({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isBookmarked, setIsBookmarked] = useState<boolean>(false);
 
+  // Dynamic scaling for A4 sheet in reader to fit mobile viewports perfectly
+  const [a4Scale, setA4Scale] = useState<number>(1);
+  const a4ContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const updateScale = () => {
+      if (!a4ContainerRef.current) return;
+      const parentWidth = a4ContainerRef.current.parentElement?.clientWidth || window.innerWidth;
+      const padding = 16; // horizontal padding for mobile
+      const targetWidth = parentWidth - padding * 2;
+      if (targetWidth < 794) {
+        setA4Scale(targetWidth / 794);
+      } else {
+        setA4Scale(1);
+      }
+    };
+    
+    // Add a tiny delay to ensure clientWidth is correctly calculated in DOM
+    const timer = setTimeout(updateScale, 150);
+    
+    window.addEventListener('resize', updateScale);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', updateScale);
+    };
+  }, [currentPageIdx, currentKitabData?.id]);
+
   // New Copy text handler for Premium users
   const handleCopyPageText = () => {
     if (!isUserPremium) {
@@ -759,115 +786,139 @@ public class MainActivity extends BridgeActivity {
 
                 {/* 2. FIRESTORE TEXT MODE (sourceType text body - LOADED PAGE BY PAGE) (Revisi Poin 1 & 2) */}
                 {isFirestoreText && (
-                  <div className={`bg-white rounded-2xl border border-slate-200 p-5 sm:p-7 md:p-9 shadow-xs ${isUserPremium ? 'select-text' : 'select-none'}`}>
-                    {(() => {
-                      const pageContent = textPages[currentPageIdx] || '';
-                      
-                      const isArabicText = (text: string): boolean => {
-                        return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
-                      };
+                  <div ref={a4ContainerRef} className="w-full flex justify-center overflow-hidden py-4 select-text">
+                    <div 
+                      className={`bg-white border border-slate-300 shadow-2xl relative box-border flex flex-col shrink-0 text-slate-850 ${isUserPremium ? 'select-text' : 'select-none'}`}
+                      style={{
+                        width: '794px',
+                        minHeight: '1122px',
+                        padding: '60px',
+                        boxSizing: 'border-box',
+                        overflow: 'visible',
+                        transform: `scale(${a4Scale})`,
+                        transformOrigin: 'top center',
+                        marginBottom: `${1122 * (a4Scale - 1)}px`,
+                        userSelect: isUserPremium ? 'text' : 'none',
+                        WebkitUserSelect: isUserPremium ? 'text' : 'none'
+                      }}
+                    >
+                      {(() => {
+                        const rawContent = textPages[currentPageIdx] || '';
+                        const cleanReaderContent = (html: string): string => {
+                          if (!html) return '';
+                          return html.replace(/<div\s+[^>]*class=["'][^"']*page-break-divider[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi, '');
+                        };
+                        const pageContent = cleanReaderContent(rawContent);
+                        
+                        const isArabicText = (text: string): boolean => {
+                          return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+                        };
 
-                      const dbDirection = currentKitabData?.direction || 'auto';
-                      const computedDirection = dbDirection === 'auto' 
-                        ? (isArabicText(pageContent) ? 'rtl' : 'ltr') 
-                        : dbDirection;
-                      const isRtl = computedDirection === 'rtl';
+                        const dbDirection = currentKitabData?.direction || 'auto';
+                        const computedDirection = dbDirection === 'auto' 
+                          ? (isArabicText(pageContent) ? 'rtl' : 'ltr') 
+                          : dbDirection;
+                        const isRtl = computedDirection === 'rtl';
 
-                      const dbTextAlign = currentKitabData?.textAlign || 'justify';
-                      const alignClass = dbTextAlign === 'left' ? 'text-left' :
-                                         dbTextAlign === 'center' ? 'text-center' :
-                                         dbTextAlign === 'right' ? 'text-right' : 'text-justify';
+                        const dbTextAlign = currentKitabData?.textAlign || 'justify';
+                        const alignClass = dbTextAlign === 'left' ? 'text-left' :
+                                           dbTextAlign === 'center' ? 'text-center' :
+                                           dbTextAlign === 'right' ? 'text-right' : 'text-justify';
 
-                      const dbLineHeight = currentKitabData?.lineHeight || 'relaxed';
-                      const leadingClass = dbLineHeight === 'normal' ? 'leading-normal' :
-                                           dbLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+                        const dbLineHeight = currentKitabData?.lineHeight || 'relaxed';
+                        const leadingClass = dbLineHeight === 'normal' ? 'leading-normal' :
+                                             dbLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
 
-                      const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
-                      
-                      const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
-                      
-                      if (isHtml) {
+                        const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
+                        
+                        const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
+                        
+                        if (isHtml) {
+                          return (
+                            <div dir={computedDirection}>
+                              <style dangerouslySetInnerHTML={{ __html: `
+                                .word-content table {
+                                  width: 100%;
+                                  border-collapse: collapse;
+                                  margin-top: 14px;
+                                  margin-bottom: 14px;
+                                  font-size: 0.9em;
+                                }
+                                .word-content th, .word-content td {
+                                  border: 1.5px solid #cbd5e1;
+                                  padding: 10px 14px;
+                                  text-align: ${isRtl ? 'right' : 'left'};
+                                  vertical-align: middle;
+                                }
+                                .word-content th {
+                                  background-color: #f8fafc;
+                                  font-weight: 700;
+                                  color: #1e293b;
+                                }
+                                .word-content tr:nth-child(even) {
+                                  background-color: #f8fafc/50;
+                                }
+                                .word-content p {
+                                  margin-bottom: 10px;
+                                  text-align: inherit;
+                                }
+                                .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
+                                  font-weight: 800;
+                                  color: #0f172a;
+                                  margin-top: 20px;
+                                  margin-bottom: 10px;
+                                  line-height: 1.3;
+                                }
+                                .word-content h1 { font-size: 1.6em; }
+                                .word-content h2 { font-size: 1.4em; }
+                                .word-content h3 { font-size: 1.2em; }
+                                .word-content h4 { font-size: 1.1em; }
+                                .word-content ul, .word-content ol {
+                                  margin-left: 24px;
+                                  margin-bottom: 14px;
+                                  list-style-position: outside;
+                                }
+                                .word-content ul { list-style-type: disc; }
+                                .word-content ol { list-style-type: decimal; }
+                                .word-content li {
+                                  margin-bottom: 6px;
+                                }
+                                .word-content blockquote {
+                                  border-left: 4px solid #10b981;
+                                  padding-left: 16px;
+                                  margin: 16px 0;
+                                  color: #475569;
+                                  font-style: italic;
+                                }
+                                .word-content hr {
+                                  border: 0;
+                                  border-top: 2px solid #e2e8f0;
+                                  margin: 20px 0;
+                                }
+                                .page-break-divider {
+                                  display: none !important;
+                                }
+                              `}} />
+                              <div 
+                                className={`text-slate-800 ${alignClass} ${leadingClass} ${familyClass}`}
+                                style={{ fontSize: `${fontSize}px` }}
+                                dangerouslySetInnerHTML={{ __html: pageContent }}
+                              />
+                            </div>
+                          );
+                        }
+
                         return (
-                          <div dir={computedDirection}>
-                            <style dangerouslySetInnerHTML={{ __html: `
-                              .word-content table {
-                                width: 100%;
-                                border-collapse: collapse;
-                                margin-top: 14px;
-                                margin-bottom: 14px;
-                                font-size: 0.9em;
-                              }
-                              .word-content th, .word-content td {
-                                border: 1.5px solid #cbd5e1;
-                                padding: 10px 14px;
-                                text-align: ${isRtl ? 'right' : 'left'};
-                                vertical-align: middle;
-                              }
-                              .word-content th {
-                                background-color: #f8fafc;
-                                font-weight: 700;
-                                color: #1e293b;
-                              }
-                              .word-content tr:nth-child(even) {
-                                background-color: #f8fafc/50;
-                              }
-                              .word-content p {
-                                margin-bottom: 10px;
-                                text-align: inherit;
-                              }
-                              .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
-                                font-weight: 800;
-                                color: #0f172a;
-                                margin-top: 20px;
-                                margin-bottom: 10px;
-                                line-height: 1.3;
-                              }
-                              .word-content h1 { font-size: 1.6em; }
-                              .word-content h2 { font-size: 1.4em; }
-                              .word-content h3 { font-size: 1.2em; }
-                              .word-content h4 { font-size: 1.1em; }
-                              .word-content ul, .word-content ol {
-                                margin-left: 24px;
-                                margin-bottom: 14px;
-                                list-style-position: outside;
-                              }
-                              .word-content ul { list-style-type: disc; }
-                              .word-content ol { list-style-type: decimal; }
-                              .word-content li {
-                                margin-bottom: 6px;
-                              }
-                              .word-content blockquote {
-                                border-left: 4px solid #10b981;
-                                padding-left: 16px;
-                                margin: 16px 0;
-                                color: #475569;
-                                font-style: italic;
-                              }
-                              .word-content hr {
-                                border: 0;
-                                border-top: 2px solid #e2e8f0;
-                                margin: 20px 0;
-                              }
-                            `}} />
-                            <div 
-                              className={`text-slate-800 ${alignClass} ${leadingClass} ${familyClass}`}
-                              style={{ fontSize: `${fontSize}px` }}
-                              dangerouslySetInnerHTML={{ __html: pageContent }}
-                            />
+                          <div 
+                            dir={computedDirection}
+                            className={`text-slate-800 whitespace-pre-line ${alignClass} ${leadingClass} ${familyClass}`}
+                            style={{ fontSize: `${fontSize}px` }}
+                          >
+                            {pageContent || 'Selesai membaca.'}
                           </div>
                         );
-                      }
-
-                      return (
-                        <div 
-                          dir={computedDirection}
-                          className={`text-slate-800 whitespace-pre-line ${alignClass} ${leadingClass} ${familyClass}`}
-                          style={{ fontSize: `${fontSize}px` }}
-                        >
-                          {pageContent || 'Selesai membaca.'}
-                        </div>
-                      );
-                    })()}
+                      })()}
+                    </div>
                   </div>
                 )}
 

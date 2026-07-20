@@ -265,7 +265,24 @@ export async function loginFirebaseUser(email: string, password: string): Promis
       (async () => {
         try {
           console.log('[MUARA Admin Auth] Mencoba menyamakan sesi ke Firebase Auth (Background)...');
-          const userCredential = await signInWithEmailAndPassword(auth, emailClean, password);
+          let userCredential;
+          try {
+            userCredential = await signInWithEmailAndPassword(auth, emailClean, password);
+          } catch (signInErr: any) {
+            const errCode = signInErr?.code || '';
+            const errMsg = String(signInErr?.message || '').toLowerCase();
+            const isUserNotFound = errCode === 'auth/user-not-found' || 
+                                   errCode === 'auth/invalid-credential' || 
+                                   errMsg.includes('user-not-found') || 
+                                   errMsg.includes('invalid-credential');
+            
+            if (isUserNotFound) {
+              console.log('[MUARA Admin Auth Sync] Akun admin belum terdaftar di awan Firebase Auth. Mendaftarkan otomatis...');
+              userCredential = await createUserWithEmailAndPassword(auth, emailClean, password);
+            } else {
+              throw signInErr;
+            }
+          }
           const realUid = userCredential.user.uid;
           
           if (db) {
