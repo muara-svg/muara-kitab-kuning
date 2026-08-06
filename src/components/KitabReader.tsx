@@ -29,7 +29,7 @@ import { indexedDbService } from '../lib/indexedDbService';
 import { UserProfile } from '../types';
 import { firestore } from '../lib/firebaseConfig';
 import { doc, getDoc } from '../lib/customFirestore';
-import { isArabicText, stripShapesAndTables, paginateHtml } from '../lib/kitabUtils';
+import { isArabicText, stripShapesAndTables, paginateHtml } from '../lib/KitabUtils';
 
 interface KitabReaderProps {
   kitab: any; // Can be MOCK structured KitabKuning or Firestore KitabItem
