@@ -25,7 +25,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { firestore } from '../../lib/firebaseConfig';
 import { indexedDbService } from '../../lib/indexedDbService';
-import { stripShapesAndTables, cleanSpacesAndEnters, paginateHtml } from '../../lib/kitabUtils';
+import { stripShapesAndTables, cleanSpacesAndEnters, paginateHtml } from '../../lib/KitabUtils';
 import { 
   collection, 
   doc, 

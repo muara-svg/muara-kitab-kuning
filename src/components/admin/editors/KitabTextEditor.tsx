@@ -22,7 +22,7 @@ import {
   stripShapesAndTables, 
   cleanSpacesAndEnters, 
   paginateHtml 
-} from '../../../lib/kitabUtils';
+} from '../../../lib/KitabUtils';
 
 interface KitabTextEditorProps {
   isOpen: boolean;
