@@ -28,7 +28,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { indexedDbService } from '../lib/indexedDbService';
 import { UserProfile } from '../types';
 import { firestore } from '../lib/firebaseConfig';
-import { doc, getDoc } from '../lib/customFirestore';
+import { doc, getDoc } from '../lib/customfirestore';
+import { isArabicText, stripShapesAndTables, paginateHtml } from '../lib/kitabUtils';
 
 interface KitabReaderProps {
   kitab: any; // Can be MOCK structured KitabKuning or Firestore KitabItem
@@ -52,6 +53,9 @@ export default function KitabReader({
 
   // Font zoom controls
   const [fontSize, setFontSize] = useState<number>(14); // in pixels for content
+
+  // Paper Theme State (Default: 'klasik-kuning' for authentic yellow Kitab Kuning manuscript paper)
+  const [paperTheme, setPaperTheme] = useState<'klasik-kuning' | 'putih-bersih' | 'sepia-malam'>('klasik-kuning');
 
   // Connectivity and Offline states
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
@@ -81,18 +85,16 @@ export default function KitabReader({
     const updateScale = () => {
       if (!a4ContainerRef.current) return;
       const parentWidth = a4ContainerRef.current.parentElement?.clientWidth || window.innerWidth;
-      const padding = 16; // horizontal padding for mobile
+      const padding = 12; // horizontal padding for mobile
       const targetWidth = parentWidth - padding * 2;
       if (targetWidth < 794) {
-        setA4Scale(targetWidth / 794);
+        setA4Scale(Math.max(0.38, targetWidth / 794));
       } else {
         setA4Scale(1);
       }
     };
     
-    // Add a tiny delay to ensure clientWidth is correctly calculated in DOM
-    const timer = setTimeout(updateScale, 150);
-    
+    const timer = setTimeout(updateScale, 100);
     window.addEventListener('resize', updateScale);
     return () => {
       clearTimeout(timer);
@@ -452,33 +454,36 @@ export default function KitabReader({
   const isFirestoreText = currentKitabData.sourceType === 'text';
   const isFirestorePages = currentKitabData.sourceType === 'file';
 
-  // HELPER PAGINATION (Ubah paragraf panjang menjadi beberapa halaman visual virtual)
+  // HELPER PAGINATION (Sistem Pemotong A4 Presisi tanpa Teks Terpotong)
   const getPaginatedTextPages = (): string[] => {
-    if (currentKitabData.pages && currentKitabData.pages.length > 0 && currentKitabData.sourceType !== 'file') {
-      return currentKitabData.pages;
-    }
-    const fullText = currentKitabData.textBody || '';
-    if (!fullText) return [''];
-    
-    // Pecah teks berdasarkan paragraf untuk membentuk "Halaman Buku" yang indah & ringan (~1200 karakter per halaman)
-    const paragraphs = fullText.split('\n');
-    const pagesList: string[] = [];
-    let currentBlock = '';
-    
-    paragraphs.forEach((p) => {
-      if ((currentBlock + '\n' + p).length > 1200) {
-        if (currentBlock.trim()) {
-          pagesList.push(currentBlock.trim());
-        }
-        currentBlock = p;
-      } else {
-        currentBlock += (currentBlock ? '\n' : '') + p;
-      }
+    const fullText = currentKitabData.textBody || (currentKitabData.pages && currentKitabData.pages.length > 0 ? currentKitabData.pages.join('\n\n') : '');
+    if (!fullText || !fullText.trim()) return ['<p><br></p>'];
+
+    const clean = stripShapesAndTables(fullText);
+
+    const dbDirection = currentKitabData?.direction || 'auto';
+    const computedDir = dbDirection === 'auto' 
+      ? (isArabicText(clean) ? 'rtl' : 'ltr') 
+      : dbDirection;
+    const isRtl = computedDir === 'rtl';
+
+    // Scale font size setting option
+    const sizeOption: 'sm' | 'base' | 'lg' | 'xl' | '2xl' = 
+      fontSize <= 13 ? 'sm' :
+      fontSize <= 15 ? 'base' :
+      fontSize <= 18 ? 'lg' :
+      fontSize <= 21 ? 'xl' : '2xl';
+
+    const lineHeightOption = currentKitabData?.lineHeight || 'relaxed';
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+    return paginateHtml(clean, {
+      fontSize: sizeOption,
+      lineHeight: lineHeightOption,
+      isRtl,
+      numericFontSize: fontSize,
+      targetHeight: 840
     });
-    if (currentBlock.trim()) {
-      pagesList.push(currentBlock.trim());
-    }
-    return pagesList.length > 0 ? pagesList : [fullText];
   };
 
   const textPages = getPaginatedTextPages();
@@ -534,34 +539,34 @@ public class MainActivity extends BridgeActivity {
       className="fixed inset-0 z-50 bg-slate-50 flex flex-col h-screen overflow-hidden text-slate-800"
     >
       {/* ---------------- BAR ATAS (HEADER NAVIGATION & UTILITY) ---------------- */}
-      <div className="bg-white border-b border-slate-200 px-3 py-2 sm:px-4 sm:py-3 flex items-center justify-between shadow-2xs shrink-0 select-none">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <div className="bg-white border-b border-slate-200 px-3 pb-2 sm:px-4 sm:pb-3 pt-[max(10px,env(safe-area-inset-top))] flex items-center justify-between shadow-2xs shrink-0 select-none">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+            className="p-1.5 hover:bg-slate-100 rounded-full transition-colors cursor-pointer shrink-0"
           >
             <ArrowLeft className="h-4.5 w-4.5 text-slate-700" />
           </button>
           
-          <div>
-            <h2 className="font-extrabold text-slate-800 text-[11px] sm:text-xs md:text-sm tracking-tight flex items-center gap-1.5">
-              {currentKitabData.title}
+          <div className="min-w-0">
+            <h2 className="font-extrabold text-slate-800 text-[11px] sm:text-xs md:text-sm tracking-tight flex items-center gap-1.5 truncate">
+              <span className="truncate">{currentKitabData.title}</span>
               {isPremiumBook && (
-                <span className="bg-amber-100 text-amber-700 text-[7px] sm:text-[8px] font-bold px-1 py-0.5 rounded uppercase font-mono tracking-wider flex items-center gap-0.5 border border-amber-200 shadow-3xs">
+                <span className="bg-amber-100 text-amber-700 text-[7px] sm:text-[8px] font-bold px-1 py-0.5 rounded uppercase font-mono tracking-wider flex items-center gap-0.5 border border-amber-200 shadow-3xs shrink-0">
                   👑 VIP
                 </span>
               )}
             </h2>
-            <p className="text-[9px] sm:text-[10px] text-slate-400 font-semibold font-mono">
-              Karya: {currentKitabData.author || 'Mufassir'}
-            </p>
+            <div className="flex items-center gap-2 text-[9px] sm:text-[10px] font-semibold font-mono text-slate-400">
+              <span className="truncate">Karya: {currentKitabData.author || 'Mufassir'}</span>
+            </div>
           </div>
         </div>
 
-        {/* RIGHT AREA: CONTROLS ZOOM & INDIKATOR SIMPAN RIWAYAT (Revisi Poin 2, 3, 4) */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          
+        {/* RIGHT AREA: ZOOM CONTROLS & BOOKMARK */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+
           {/* SIZE ZOOM INTERFACE */}
           <div className="flex bg-slate-100 hover:bg-slate-150 border border-slate-200 p-0.5 rounded-lg sm:rounded-xl items-center gap-0.5 shrink-0">
             <button
@@ -596,7 +601,7 @@ public class MainActivity extends BridgeActivity {
             title="Simpan Riwayat Baca Kitab"
           >
             <Bookmark className={`h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform active:scale-90 ${isBookmarked ? 'fill-current text-amber-300' : ''}`} />
-            <span className="hidden sm:inline font-sans text-[10px] font-bold">
+            <span className="hidden md:inline font-sans text-[10px] font-bold">
               {isBookmarked ? 'Ditandai' : 'Simpan Riwayat'}
             </span>
           </button>
@@ -784,140 +789,163 @@ public class MainActivity extends BridgeActivity {
                   </div>
                 )}
 
-                {/* 2. FIRESTORE TEXT MODE (sourceType text body - LOADED PAGE BY PAGE) (Revisi Poin 1 & 2) */}
+                {/* 2. FIRESTORE TEXT MODE (sourceType text body - LOADED PAGE BY PAGE IN EXACT PATENT A4) */}
                 {isFirestoreText && (
-                  <div ref={a4ContainerRef} className="w-full flex justify-center overflow-hidden py-4 select-text">
-                    <div 
-                      className={`bg-white border border-slate-300 shadow-2xl relative box-border flex flex-col shrink-0 text-slate-850 ${isUserPremium ? 'select-text' : 'select-none'}`}
+                  <div ref={a4ContainerRef} className="w-full flex justify-center items-start py-2 sm:py-4 px-1 select-text overflow-x-hidden">
+                    <div
                       style={{
-                        width: '794px',
-                        minHeight: '1122px',
-                        padding: '60px',
-                        boxSizing: 'border-box',
-                        overflow: 'visible',
-                        transform: `scale(${a4Scale})`,
-                        transformOrigin: 'top center',
-                        marginBottom: `${1122 * (a4Scale - 1)}px`,
-                        userSelect: isUserPremium ? 'text' : 'none',
-                        WebkitUserSelect: isUserPremium ? 'text' : 'none'
+                        width: `${794 * a4Scale}px`,
+                        height: `${1122 * a4Scale}px`,
+                        position: 'relative',
+                        flexShrink: 0
                       }}
                     >
-                      {(() => {
-                        const rawContent = textPages[currentPageIdx] || '';
-                        const cleanReaderContent = (html: string): string => {
-                          if (!html) return '';
-                          return html.replace(/<div\s+[^>]*class=["'][^"']*page-break-divider[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi, '');
-                        };
-                        const pageContent = cleanReaderContent(rawContent);
-                        
-                        const isArabicText = (text: string): boolean => {
-                          return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
-                        };
+                      <div 
+                        className={`absolute top-0 left-0 box-border flex flex-col transition-all duration-300 rounded-sm shadow-2xl bg-[#fcf8ec] text-[#2b2214] border-2 border-[#e3d3a3] shadow-amber-950/15 ${isUserPremium ? 'select-text' : 'select-none'}`}
+                        style={{
+                          width: '794px',
+                          height: '1122px',
+                          padding: '50px 55px 40px 55px',
+                          boxSizing: 'border-box',
+                          overflow: 'hidden',
+                          transform: `scale(${a4Scale})`,
+                          transformOrigin: 'top left',
+                          userSelect: isUserPremium ? 'text' : 'none',
+                          WebkitUserSelect: isUserPremium ? 'text' : 'none'
+                        }}
+                      >
+                        {/* Classical Kitab Kuning Header Frame */}
+                        <div className="flex items-center justify-between border-b pb-2 mb-4 text-[9px] font-mono uppercase tracking-widest border-amber-300/60 text-amber-800/70 select-none pointer-events-none">
+                          <span className="truncate max-w-[320px]">{currentKitabData.title}</span>
+                          <span className="font-extrabold bg-amber-900/5 px-2 py-0.5 rounded">Halaman {currentPageIdx + 1} / {totalPages}</span>
+                        </div>
 
-                        const dbDirection = currentKitabData?.direction || 'auto';
-                        const computedDirection = dbDirection === 'auto' 
-                          ? (isArabicText(pageContent) ? 'rtl' : 'ltr') 
-                          : dbDirection;
-                        const isRtl = computedDirection === 'rtl';
+                        {/* Main A4 Page Body Content */}
+                        <div className="flex-1 overflow-hidden pb-1">
+                          {(() => {
+                            const rawContent = textPages[currentPageIdx] || '';
+                            const cleanReaderContent = (html: string): string => {
+                              if (!html) return '';
+                              return html
+                                .replace(/<div\s+[^>]*class=["'][^"']*page-break-divider[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi, '')
+                                .replace(/<hr[^>]*>/gi, '');
+                            };
+                            const pageContent = cleanReaderContent(rawContent);
+                            
+                            const isArabicText = (text: string): boolean => {
+                              return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+                            };
 
-                        const dbTextAlign = currentKitabData?.textAlign || 'justify';
-                        const alignClass = dbTextAlign === 'left' ? 'text-left' :
-                                           dbTextAlign === 'center' ? 'text-center' :
-                                           dbTextAlign === 'right' ? 'text-right' : 'text-justify';
+                            const dbDirection = currentKitabData?.direction || 'auto';
+                            const computedDirection = dbDirection === 'auto' 
+                              ? (isArabicText(pageContent) ? 'rtl' : 'ltr') 
+                              : dbDirection;
+                            const isRtl = computedDirection === 'rtl';
 
-                        const dbLineHeight = currentKitabData?.lineHeight || 'relaxed';
-                        const leadingClass = dbLineHeight === 'normal' ? 'leading-normal' :
-                                             dbLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+                            const dbTextAlign = currentKitabData?.textAlign || 'justify';
+                            const alignClass = dbTextAlign === 'left' ? 'text-left' :
+                                               dbTextAlign === 'center' ? 'text-center' :
+                                               dbTextAlign === 'right' ? 'text-right' : 'text-justify';
 
-                        const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
-                        
-                        const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
-                        
-                        if (isHtml) {
-                          return (
-                            <div dir={computedDirection}>
-                              <style dangerouslySetInnerHTML={{ __html: `
-                                .word-content table {
-                                  width: 100%;
-                                  border-collapse: collapse;
-                                  margin-top: 14px;
-                                  margin-bottom: 14px;
-                                  font-size: 0.9em;
-                                }
-                                .word-content th, .word-content td {
-                                  border: 1.5px solid #cbd5e1;
-                                  padding: 10px 14px;
-                                  text-align: ${isRtl ? 'right' : 'left'};
-                                  vertical-align: middle;
-                                }
-                                .word-content th {
-                                  background-color: #f8fafc;
-                                  font-weight: 700;
-                                  color: #1e293b;
-                                }
-                                .word-content tr:nth-child(even) {
-                                  background-color: #f8fafc/50;
-                                }
-                                .word-content p {
-                                  margin-bottom: 10px;
-                                  text-align: inherit;
-                                }
-                                .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
-                                  font-weight: 800;
-                                  color: #0f172a;
-                                  margin-top: 20px;
-                                  margin-bottom: 10px;
-                                  line-height: 1.3;
-                                }
-                                .word-content h1 { font-size: 1.6em; }
-                                .word-content h2 { font-size: 1.4em; }
-                                .word-content h3 { font-size: 1.2em; }
-                                .word-content h4 { font-size: 1.1em; }
-                                .word-content ul, .word-content ol {
-                                  margin-left: 24px;
-                                  margin-bottom: 14px;
-                                  list-style-position: outside;
-                                }
-                                .word-content ul { list-style-type: disc; }
-                                .word-content ol { list-style-type: decimal; }
-                                .word-content li {
-                                  margin-bottom: 6px;
-                                }
-                                .word-content blockquote {
-                                  border-left: 4px solid #10b981;
-                                  padding-left: 16px;
-                                  margin: 16px 0;
-                                  color: #475569;
-                                  font-style: italic;
-                                }
-                                .word-content hr {
-                                  border: 0;
-                                  border-top: 2px solid #e2e8f0;
-                                  margin: 20px 0;
-                                }
-                                .page-break-divider {
-                                  display: none !important;
-                                }
-                              `}} />
+                            const dbLineHeight = currentKitabData?.lineHeight || 'relaxed';
+                            const leadingClass = dbLineHeight === 'normal' ? 'leading-normal' :
+                                                 dbLineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
+
+                            const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
+                            
+                            const isHtml = /<[a-z][\s\S]*>/i.test(pageContent);
+                            
+                            if (isHtml) {
+                              return (
+                                <div dir={computedDirection}>
+                                  <style dangerouslySetInnerHTML={{ __html: `
+                                    .word-content table {
+                                      width: 100%;
+                                      border-collapse: collapse;
+                                      margin-top: 14px;
+                                      margin-bottom: 14px;
+                                      font-size: 0.9em;
+                                    }
+                                    .word-content th, .word-content td {
+                                      border: 1.5px solid #e3d3a3;
+                                      padding: 10px 14px;
+                                      text-align: ${isRtl ? 'right' : 'left'};
+                                      vertical-align: middle;
+                                    }
+                                    .word-content th {
+                                      background-color: #f5ebcc;
+                                      font-weight: 700;
+                                      color: #2c2214;
+                                    }
+                                    .word-content p {
+                                      margin-bottom: 12px;
+                                      text-align: inherit;
+                                    }
+                                    .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
+                                      font-weight: 800;
+                                      color: #4a3200;
+                                      margin-top: 18px;
+                                      margin-bottom: 10px;
+                                      line-height: 1.3;
+                                    }
+                                    .word-content h1 { font-size: 1.6em; }
+                                    .word-content h2 { font-size: 1.4em; }
+                                    .word-content h3 { font-size: 1.2em; }
+                                    .word-content h4 { font-size: 1.1em; }
+                                    .word-content ul, .word-content ol {
+                                      margin-left: 24px;
+                                      margin-bottom: 14px;
+                                      list-style-position: outside;
+                                    }
+                                    .word-content ul { list-style-type: disc; }
+                                    .word-content ol { list-style-type: decimal; }
+                                    .word-content li {
+                                      margin-bottom: 6px;
+                                    }
+                                    .word-content blockquote {
+                                      border-left: 4px solid #10b981;
+                                      padding-left: 16px;
+                                      margin: 16px 0;
+                                      color: #5c4827;
+                                      font-style: italic;
+                                    }
+                                    .word-content hr, .page-break-divider {
+                                      display: none !important;
+                                    }
+                                  `}} />
+                                  <div 
+                                    className={`word-content ${alignClass} ${leadingClass} ${familyClass}`}
+                                    style={{ 
+                                      fontSize: `${fontSize}px`,
+                                      color: '#2b2214'
+                                    }}
+                                    dangerouslySetInnerHTML={{ __html: pageContent }}
+                                  />
+                                </div>
+                              );
+                            }
+
+                            return (
                               <div 
-                                className={`text-slate-800 ${alignClass} ${leadingClass} ${familyClass}`}
-                                style={{ fontSize: `${fontSize}px` }}
-                                dangerouslySetInnerHTML={{ __html: pageContent }}
-                              />
-                            </div>
-                          );
-                        }
+                                dir={computedDirection}
+                                className={`whitespace-pre-line ${alignClass} ${leadingClass} ${familyClass}`}
+                                style={{ 
+                                  fontSize: `${fontSize}px`,
+                                  color: '#2b2214'
+                                }}
+                              >
+                                {pageContent || 'Selesai membaca.'}
+                              </div>
+                            );
+                          })()}
+                        </div>
 
-                        return (
-                          <div 
-                            dir={computedDirection}
-                            className={`text-slate-800 whitespace-pre-line ${alignClass} ${leadingClass} ${familyClass}`}
-                            style={{ fontSize: `${fontSize}px` }}
-                          >
-                            {pageContent || 'Selesai membaca.'}
-                          </div>
-                        );
-                      })()}
+                        {/* Clean Classical Kitab Kuning Footer */}
+                        <div className="border-t border-amber-300/60 pt-2 mt-2 flex items-center justify-between text-[8px] font-mono text-amber-800/60 select-none pointer-events-none">
+                          <span className="truncate max-w-[300px]">{currentKitabData.title}</span>
+                          <span>{currentKitabData.author || 'Mufassir'}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -938,7 +966,9 @@ public class MainActivity extends BridgeActivity {
                           const pageUrl = currentKitabData.pages[currentPageIdx];
                           if (!pageUrl) return <div className="text-slate-450 font-mono text-center text-xs py-8">Halaman tidak ditemukan</div>;
                           return (
-                            <div className="bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-slate-205 max-w-lg w-full relative group overflow-hidden transition-all duration-300">
+                            <div className={`p-3 sm:p-4 rounded-2xl shadow-xl border max-w-lg w-full relative group overflow-hidden transition-all duration-300 ${
+                              paperTheme === 'klasik-kuning' ? 'bg-[#fcf8ec] border-[#e3d3a3]' : 'bg-white border-slate-200'
+                            }`}>
                               {/* Watermark to avoid photo screenshot reuse (HIDDEN FOR PREMIUM SESSIONS AS PER USER REQUEST POIN 1) */}
                               {!isUserPremium && (
                                 <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 rotate-12 text-center pointer-events-none opacity-4 flex flex-col items-center select-none">
@@ -979,9 +1009,9 @@ public class MainActivity extends BridgeActivity {
 
           </div>
 
-                {/* ---------------- BAR NAVIGASI BAWAH (FLOATING PAGINATION CONTROL PANEL) (Revisi Poin 5) ---------------- */}
+          {/* ---------------- BAR NAVIGASI BAWAH (FLOATING PAGINATION CONTROL PANEL WITH ANDROID SAFE AREA) ---------------- */}
           {hasAccess && (!activeOffline || loadedFromLocal) && (
-            <div className="bg-white border-t border-slate-200 shadow-md px-2 py-1.5 sm:px-4 sm:py-2 shrink-0 flex items-center justify-between select-none z-10">
+            <div className="bg-white border-t border-slate-200 shadow-md px-2 pt-1.5 sm:px-4 sm:pt-2 pb-[max(10px,env(safe-area-inset-bottom))] shrink-0 flex items-center justify-between select-none z-10">
               
               {/* TOMBOL HALAMAN SEBELUMNYA */}
               <button

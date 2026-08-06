@@ -25,6 +25,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { firestore } from '../../lib/firebaseConfig';
 import { indexedDbService } from '../../lib/indexedDbService';
+import { stripShapesAndTables, cleanSpacesAndEnters, paginateHtml } from '../../lib/kitabUtils';
 import { 
   collection, 
   doc, 
@@ -35,7 +36,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp 
-} from '../../lib/customFirestore';
+} from '../../lib/customfirestore';
 import { uploadToCloudinaryDirect } from '../../lib/cloudinaryConfig';
 import KitabTextEditor from './editors/KitabTextEditor';
 
@@ -518,8 +519,12 @@ export default function AdminKitab({ onSuccess, onError, refreshTrigger }: Admin
         throw new Error('Format berkas tidak didukung. Unggah PDF atau Word (.docx).');
       }
 
-      setKitabTextBody(result.textBody);
-      setKitabPages(result.pages);
+      // Automatically strip tables, shapes, and clean excessive spaces/enters from uploaded content
+      const cleanedBody = cleanSpacesAndEnters(result.textBody);
+      const cleanedPages = (result.pages || []).map(p => cleanSpacesAndEnters(p));
+
+      setKitabTextBody(cleanedBody);
+      setKitabPages(cleanedPages);
 
       // Auto detect Arabic content to set perfect defaults
       const isArabic = isArabicText(result.textBody);

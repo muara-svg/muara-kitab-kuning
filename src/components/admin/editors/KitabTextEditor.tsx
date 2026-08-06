@@ -8,322 +8,21 @@ import {
   AlignRight, 
   AlignJustify, 
   FileText, 
-  BookOpen, 
   Bold,
   Italic,
   Underline,
   Strikethrough,
   List,
   ListOrdered,
-  Table,
   Scissors
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-// Helper to detect if text contains Arabic characters
-const isArabicText = (text: string): boolean => {
-  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
-};
-
-// Precise browser-based A4 HTML pagination function
-export function paginateHtml(
-  htmlContent: string,
-  options: {
-    fontSize: 'sm' | 'base' | 'lg' | 'xl' | '2xl';
-    lineHeight: 'normal' | 'relaxed' | 'loose';
-    isRtl: boolean;
-  }
-): string[] {
-  if (typeof document === 'undefined') {
-    return [htmlContent];
-  }
-
-  // Create an invisible measurement container
-  const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.top = '-9999px';
-  container.style.left = '-9999px';
-  container.style.width = '210mm'; // Standard A4 width
-  container.style.padding = '20mm'; // Standard A4 margin
-  container.style.boxSizing = 'border-box';
-  container.style.visibility = 'hidden';
-  container.style.overflow = 'hidden';
-
-  const isRtl = options.isRtl;
-  const alignClass = 'text-justify'; 
-  const sizeClass = options.fontSize === 'sm' ? 'text-xs md:text-sm' :
-                    options.fontSize === 'base' ? 'text-sm md:text-base' :
-                    options.fontSize === 'lg' ? 'text-base md:text-lg' :
-                    options.fontSize === 'xl' ? 'text-lg md:text-xl' : 'text-xl md:text-2xl';
-
-  const leadingClass = options.lineHeight === 'normal' ? 'leading-normal' :
-                       options.lineHeight === 'relaxed' ? 'leading-relaxed' : 'leading-loose';
-
-  const familyClass = isRtl ? 'font-arabic tracking-wide' : 'font-serif';
-
-  container.className = `word-content bg-white ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`;
-  
-  const fontSizeMap = {
-    sm: '13px',
-    base: '15px',
-    lg: '17px',
-    xl: '20px',
-    '2xl': '24px'
-  };
-  const lineHeightMap = {
-    normal: '1.5',
-    relaxed: '1.8',
-    loose: '2.2'
-  };
-  container.style.fontSize = fontSizeMap[options.fontSize] || '17px';
-  container.style.lineHeight = lineHeightMap[options.lineHeight] || '1.8';
-
-  const styleEl = document.createElement('style');
-  styleEl.innerHTML = `
-    .word-content table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 14px;
-      margin-bottom: 14px;
-      font-size: 0.9em;
-    }
-    .word-content th, .word-content td {
-      border: 1.5px solid #cbd5e1;
-      padding: 10px 14px;
-      text-align: ${isRtl ? 'right' : 'left'};
-      vertical-align: middle;
-    }
-    .word-content th {
-      background-color: #f8fafc;
-      font-weight: 700;
-      color: #1e293b;
-    }
-    .word-content p {
-      margin-bottom: 10px;
-    }
-    .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
-      font-weight: 800;
-      color: #0f172a;
-      margin-top: 20px;
-      margin-bottom: 10px;
-      line-height: 1.3;
-    }
-    .word-content h1 { font-size: 1.6em; }
-    .word-content h2 { font-size: 1.4em; }
-    .word-content h3 { font-size: 1.2em; }
-  `;
-  container.appendChild(styleEl);
-
-  const tempPage = document.createElement('div');
-  tempPage.style.width = '100%';
-  tempPage.style.minHeight = '257mm'; // Content area height (297mm - 40mm padding)
-  tempPage.style.boxSizing = 'border-box';
-  container.appendChild(tempPage);
-
-  document.body.appendChild(container);
-
-  // Maximum vertical height budget for content of A4 page (roughly 257mm)
-  const targetPageHeight = 1000; 
-
-  const parser = new DOMParser();
-  const parsedDoc = parser.parseFromString(htmlContent, 'text/html');
-  const childNodes = Array.from(parsedDoc.body.childNodes);
-
-  const pages: string[] = [];
-
-  for (let i = 0; i < childNodes.length; i++) {
-    const node = childNodes[i];
-    
-    if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
-      continue;
-    }
-
-    const clone = node.cloneNode(true);
-    tempPage.appendChild(clone);
-
-    const currentHeight = tempPage.offsetHeight;
-
-    if (currentHeight > targetPageHeight) {
-      if (tempPage.childNodes.length > 1) {
-        tempPage.removeChild(clone);
-        pages.push(tempPage.innerHTML);
-        
-        tempPage.innerHTML = '';
-        const newClone = node.cloneNode(true);
-        tempPage.appendChild(newClone);
-      } else {
-        pages.push(tempPage.innerHTML);
-        tempPage.innerHTML = '';
-      }
-    }
-  }
-
-  if (tempPage.innerHTML.trim()) {
-    pages.push(tempPage.innerHTML);
-  }
-
-  document.body.removeChild(container);
-
-  return pages.length > 0 ? pages : [''];
-}
-
-// Strip visual page-break dividers from combined HTML
-export const stripPageBreaks = (html: string): string => {
-  if (!html) return '';
-  return html.replace(/<div\s+[^>]*class=["'][^"']*page-break-divider[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi, '');
-};
-
-// Insert visual page-break dividers into combined HTML based on exact A4 height page splits
-export const insertPageDividers = (
-  rawHtml: string,
-  fontSize: 'sm' | 'base' | 'lg' | 'xl' | '2xl',
-  lineHeight: 'normal' | 'relaxed' | 'loose',
-  isRtl: boolean
-): { combinedHtml: string; pageCount: number; pages: string[] } => {
-  const cleanHtml = stripPageBreaks(rawHtml);
-  const pages = paginateHtml(cleanHtml, { fontSize, lineHeight, isRtl });
-  
-  const combined = pages.map((pageHtml, idx) => {
-    if (idx === pages.length - 1) {
-      return pageHtml;
-    }
-    const pageNum = idx + 1;
-    const dividerHtml = `<div class="page-break-divider" contenteditable="false" style="user-select: none; -webkit-user-select: none; pointer-events: none; height: 48px; position: relative;" data-page="${pageNum}">` +
-      `</div>`;
-    return pageHtml + dividerHtml;
-  }).join('');
-
-  return {
-    combinedHtml: combined || '<p>&nbsp;</p>',
-    pageCount: pages.length,
-    pages
-  };
-};
-
-// Robust caret/selection preservation for contentEditable to prevent cursor jumping
-function saveSelection(containerEl: HTMLElement) {
-  if (typeof window === 'undefined') return null;
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-  
-  const range = sel.getRangeAt(0);
-  
-  // Count character offset from start of containerEl, ignoring dividers
-  let charCount = 0;
-  const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => {
-      let parent = node.parentElement;
-      while (parent && parent !== containerEl) {
-        if (parent.classList.contains('page-break-divider')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        parent = parent.parentElement;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    }
-  });
-
-  let foundStart = false;
-  let startOffset = 0;
-  let endOffset = 0;
-  
-  let currentNode = walker.nextNode();
-  while (currentNode) {
-    if (currentNode === range.startContainer) {
-      startOffset = charCount + range.startOffset;
-      foundStart = true;
-    }
-    if (currentNode === range.endContainer) {
-      endOffset = charCount + range.endOffset;
-      break;
-    }
-    charCount += currentNode.textContent?.length || 0;
-    currentNode = walker.nextNode();
-  }
-  
-  if (!foundStart) {
-    return {
-      type: 'fallback',
-      anchorNode: sel.anchorNode,
-      anchorOffset: sel.anchorOffset,
-      focusNode: sel.focusNode,
-      focusOffset: sel.focusOffset
-    };
-  }
-
-  return {
-    type: 'charOffset',
-    start: startOffset,
-    end: endOffset
-  };
-}
-
-function restoreSelection(containerEl: HTMLElement, savedSel: any) {
-  if (!savedSel) return;
-  if (typeof window === 'undefined') return;
-  const sel = window.getSelection();
-  if (!sel) return;
-  
-  if (savedSel.type === 'fallback') {
-    try {
-      const range = document.createRange();
-      range.setStart(savedSel.anchorNode, savedSel.anchorOffset);
-      range.setEnd(savedSel.focusNode, savedSel.focusOffset);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } catch (e) {
-      // Benign fallback error
-    }
-    return;
-  }
-
-  let charCount = 0;
-  const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => {
-      let parent = node.parentElement;
-      while (parent && parent !== containerEl) {
-        if (parent.classList.contains('page-break-divider')) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        parent = parent.parentElement;
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    }
-  });
-
-  let startNode: Node | null = null;
-  let startNodeOffset = 0;
-  let endNode: Node | null = null;
-  let endNodeOffset = 0;
-
-  let currentNode = walker.nextNode();
-  while (currentNode) {
-    const len = currentNode.textContent?.length || 0;
-    if (!startNode && savedSel.start >= charCount && savedSel.start <= charCount + len) {
-      startNode = currentNode;
-      startNodeOffset = savedSel.start - charCount;
-    }
-    if (!endNode && savedSel.end >= charCount && savedSel.end <= charCount + len) {
-      endNode = currentNode;
-      endNodeOffset = savedSel.end - charCount;
-      break;
-    }
-    charCount += len;
-    currentNode = walker.nextNode();
-  }
-
-  if (startNode && endNode) {
-    try {
-      const range = document.createRange();
-      range.setStart(startNode, startNodeOffset);
-      range.setEnd(endNode, endNodeOffset);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    } catch (e) {
-      // Benign restore range error
-    }
-  }
-}
+import { 
+  isArabicText, 
+  stripShapesAndTables, 
+  cleanSpacesAndEnters, 
+  paginateHtml 
+} from '../../../lib/kitabUtils';
 
 interface KitabTextEditorProps {
   isOpen: boolean;
@@ -369,129 +68,23 @@ export default function KitabTextEditor({
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl' | '2xl'>('lg');
   const [lineHeight, setLineHeight] = useState<'normal' | 'relaxed' | 'loose'>('relaxed');
 
-  // Unified document states
+  // Document state & estimation
   const [fullContentHtml, setFullContentHtml] = useState<string>('');
-  const [editorPages, setEditorPages] = useState<string[]>([]);
+  const [estimatedPagesCount, setEstimatedPagesCount] = useState<number>(1);
   const [isSelectionActive, setIsSelectionActive] = useState<boolean>(false);
 
-  // References to handle mounting lifecycle and direct visual manipulation
-  const initialCombinedHtmlRef = useRef<string>('');
-  const isInitializedRef = useRef<boolean>(false);
-  const reflowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const isInitializedRef = useRef<boolean>(false);
 
-  // In-Place DOM Reflow: Adjusts dividers directly without destroying nodes or selection
-  const reflowInPlace = () => {
-    const editorEl = editorRef.current || document.getElementById('continuous-editor-sheet');
-    if (!editorEl) return;
+  // Recalculate A4 page budget estimate
+  const updateEstimatedPages = (html: string) => {
+    const computedDir = direction === 'auto' 
+      ? (isArabicText(html) ? 'rtl' : 'ltr') 
+      : direction;
+    const isRtl = computedDir === 'rtl';
 
-    // Save selection before making DOM changes
-    const savedSel = saveSelection(editorEl);
-
-    // 1. Find all existing divider elements
-    const dividers = Array.from(editorEl.getElementsByClassName('page-break-divider')) as HTMLElement[];
-    
-    // 2. Remove them completely so they don't affect natural offsetTop measurements
-    dividers.forEach(div => {
-      div.remove();
-    });
-
-    // Fallback: If editor has no block children, insert a default paragraph so height/focus remain valid
-    if (editorEl.children.length === 0) {
-      editorEl.innerHTML = '<p><br></p>';
-    }
-
-    // 3. Get all content children (paragraphs, tables, lists, etc)
-    const children = (Array.from(editorEl.children) as HTMLElement[]).filter(child => {
-      return !child.classList.contains('page-break-divider');
-    });
-
-    const PADDING_TOP = 60;
-    const CONTENT_BUDGET = 1000;
-    const DIVIDER_HEIGHT = 48;
-
-    let currentPageStart = PADDING_TOP;
-    let currentPageEnd = PADDING_TOP + CONTENT_BUDGET;
-
-    const breakBeforeElements: HTMLElement[] = [];
-    let accumulatedOffset = 0;
-
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
-      
-      const naturalTop = child.offsetTop;
-      const naturalHeight = child.offsetHeight;
-      
-      const adjustedTop = naturalTop + accumulatedOffset;
-      const adjustedBottom = adjustedTop + naturalHeight;
-
-      if (adjustedBottom > currentPageEnd) {
-        if (i > 0) {
-          breakBeforeElements.push(child);
-          accumulatedOffset += DIVIDER_HEIGHT;
-          
-          currentPageStart = PADDING_TOP + (breakBeforeElements.length * (CONTENT_BUDGET + DIVIDER_HEIGHT));
-          currentPageEnd = currentPageStart + CONTENT_BUDGET;
-        }
-      }
-    }
-
-    // 4. Insert new dividers before the calculated overflow elements
-    breakBeforeElements.forEach((el, idx) => {
-      const pageNum = idx + 1;
-      const div = document.createElement('div');
-      div.className = 'page-break-divider';
-      div.setAttribute('contenteditable', 'false');
-      div.setAttribute('data-page', pageNum.toString());
-      div.style.userSelect = 'none';
-      div.style.webkitUserSelect = 'none';
-      div.style.height = `${DIVIDER_HEIGHT}px`;
-      div.style.position = 'relative';
-      
-      editorEl.insertBefore(div, el);
-    });
-
-    // 5. Build dynamic pages slice representation for counters/previews
-    const pages: string[] = [];
-    let currentPageHtml = '';
-
-    children.forEach(child => {
-      if (breakBeforeElements.includes(child)) {
-        pages.push(currentPageHtml);
-        currentPageHtml = '';
-      }
-      currentPageHtml += child.outerHTML;
-    });
-    if (currentPageHtml) {
-      pages.push(currentPageHtml);
-    }
-
-    setEditorPages(pages);
-    setFullContentHtml(editorEl.innerHTML);
-
-    // Restore caret position perfectly, eliminating cursor jumping!
-    restoreSelection(editorEl, savedSel);
-  };
-
-  // Re-calculate the page break visual dividers precisely
-  const handleAdjustPageBoundaries = (silent: boolean = false) => {
-    reflowInPlace();
-    if (!silent) {
-      onSuccessMessage('Sekat batas kertas A4 berhasil disesuaikan dengan presisi tinggi!');
-    }
-  };
-
-  // Dynamic Text Reflow with Cursor Selection Preservation
-  const handleReflow = (immediate: boolean = false) => {
-    if (reflowTimeoutRef.current) {
-      clearTimeout(reflowTimeoutRef.current);
-    }
-
-    if (immediate) {
-      reflowInPlace();
-    } else {
-      reflowTimeoutRef.current = setTimeout(reflowInPlace, 100);
-    }
+    const pages = paginateHtml(html, { fontSize, lineHeight, isRtl });
+    setEstimatedPagesCount(pages.length);
   };
 
   // Selection Change Listener to lock/unlock toolbar formatting buttons
@@ -499,13 +92,10 @@ export default function KitabTextEditor({
     const handleSelectionChange = () => {
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
-        const editorSheet = editorRef.current || document.getElementById('continuous-editor-sheet');
-        if (editorSheet && (editorSheet.contains(sel.anchorNode) || editorSheet.contains(sel.focusNode))) {
-          setIsSelectionActive(true);
-          return;
-        }
+        setIsSelectionActive(true);
+      } else {
+        setIsSelectionActive(false);
       }
-      setIsSelectionActive(false);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
@@ -514,31 +104,36 @@ export default function KitabTextEditor({
     };
   }, []);
 
-  // Format Text block with automatic Reflow trigger
+  // Format Text block
   const handleFormat = (command: string, value: string | undefined = undefined) => {
     document.execCommand(command, false, value);
-    // After formatting, immediately trigger reflow
-    handleReflow(true);
+    if (editorRef.current) {
+      const html = editorRef.current.innerHTML;
+      setFullContentHtml(html);
+      updateEstimatedPages(html);
+    }
   };
 
-  // Initialize editor full content when modal opens
+  // Initialize editor content when opened
   useEffect(() => {
     if (isOpen) {
       let combinedHtml = '';
       if (initialPages && initialPages.length > 0) {
         combinedHtml = initialPages.map(page => {
           const isHtml = /<[a-z][\s\S]*>/i.test(page);
-          if (isHtml) return page;
+          if (isHtml) return stripShapesAndTables(page);
           return page.split('\n').map(p => `<p>${p || '&nbsp;'}</p>`).join('');
         }).join('');
       } else if (initialTextBody) {
         const isHtml = /<[a-z][\s\S]*>/i.test(initialTextBody);
         if (isHtml) {
-          combinedHtml = initialTextBody;
+          combinedHtml = stripShapesAndTables(initialTextBody);
         } else {
           combinedHtml = initialTextBody.split('\n').map(p => `<p>${p || '&nbsp;'}</p>`).join('');
         }
       }
+
+      const cleanHtml = stripShapesAndTables(combinedHtml);
       
       const initialAlign = initialTextAlign || 'justify';
       const initialDir = initialDirection || 'auto';
@@ -550,25 +145,13 @@ export default function KitabTextEditor({
       setFontSize(initialSize);
       setLineHeight(initialHeight);
 
-      const computedDir = initialDir === 'auto' 
-        ? (isArabicText(combinedHtml) ? 'rtl' : 'ltr') 
-        : initialDir;
-      const isRtl = computedDir === 'rtl';
-
-      const result = insertPageDividers(combinedHtml, initialSize, initialHeight, isRtl);
-
-      initialCombinedHtmlRef.current = result.combinedHtml;
-      setFullContentHtml(result.combinedHtml);
-      setEditorPages(result.pages);
+      setFullContentHtml(cleanHtml);
       isInitializedRef.current = true;
 
-      // Mount the initial layout with dividers directly into the editor
       setTimeout(() => {
-        const editorEl = editorRef.current || document.getElementById('continuous-editor-sheet');
-        if (editorEl) {
-          editorEl.innerHTML = result.combinedHtml;
-          // Initial calculation
-          reflowInPlace();
+        if (editorRef.current) {
+          editorRef.current.innerHTML = cleanHtml || '<p><br></p>';
+          updateEstimatedPages(cleanHtml);
         }
       }, 50);
     } else {
@@ -576,71 +159,50 @@ export default function KitabTextEditor({
     }
   }, [isOpen, initialPages, initialTextBody, initialTextAlign, initialDirection, initialFontSize, initialLineHeight]);
 
-  // Clean layout when editor configurations change
+  // Update estimation when style configurations change
   useEffect(() => {
     if (!isInitializedRef.current) return;
-    handleAdjustPageBoundaries(true);
+    const currentHtml = editorRef.current ? editorRef.current.innerHTML : fullContentHtml;
+    updateEstimatedPages(currentHtml);
   }, [fontSize, lineHeight, textAlign, direction]);
 
-  // Cleanup spaces and empty markup tags
+  // Clean spaces, tables, shapes, and excessive blank lines
   const handleCleanSpaces = () => {
-    const editorEl = editorRef.current || document.getElementById('continuous-editor-sheet');
-    if (!editorEl) return;
+    const rawHtml = editorRef.current ? editorRef.current.innerHTML : fullContentHtml;
+    const cleaned = cleanSpacesAndEnters(rawHtml);
 
-    const currentHtml = editorEl.innerHTML;
-    const cleanHtml = stripPageBreaks(currentHtml);
-    
-    let cleaned = cleanHtml;
-    // Remove triple or more consecutive spaces
-    cleaned = cleaned.replace(/ {3,}/g, ' ');
-    // Remove excessive empty paragraphs
-    cleaned = cleaned.replace(/(<p>&nbsp;<\/p>\s*){3,}/g, '<p>&nbsp;</p><p>&nbsp;</p>');
-    cleaned = cleaned.replace(/(<p><br><\/p>\s*){3,}/g, '<p><br></p><p><br></p>');
+    if (editorRef.current) {
+      editorRef.current.innerHTML = cleaned || '<p><br></p>';
+    }
+    setFullContentHtml(cleaned);
+    updateEstimatedPages(cleaned);
 
-    const computedDirection = direction === 'auto' 
-      ? (isArabicText(cleaned) ? 'rtl' : 'ltr') 
-      : direction;
-    const isRtl = computedDirection === 'rtl';
-
-    // Insert visual dividers back
-    const result = insertPageDividers(cleaned, fontSize, lineHeight, isRtl);
-
-    setFullContentHtml(result.combinedHtml);
-    initialCombinedHtmlRef.current = result.combinedHtml;
-    setEditorPages(result.pages);
-    
-    editorEl.innerHTML = result.combinedHtml;
-
-    onSuccessMessage('Auto-Spasi sukses! Jarak antar-paragraf, spasi berlebih, dan sekat kertas A4 berhasil dirapikan secara serentak.');
+    onSuccessMessage('Auto-Spasi & Paragraf Berhasil! Spasi berlebih, tabel/shapes, dan enter yang terlalu jauh berhasil dirapikan secara serentak.');
   };
 
   const handleSave = () => {
-    const editorEl = editorRef.current || document.getElementById('continuous-editor-sheet');
-    const contentToSave = editorEl ? editorEl.innerHTML : fullContentHtml;
+    const rawHtml = editorRef.current ? editorRef.current.innerHTML : fullContentHtml;
+    const cleanedHtml = cleanSpacesAndEnters(rawHtml);
 
     const computedDirection = direction === 'auto' 
-      ? (isArabicText(contentToSave) ? 'rtl' : 'ltr') 
+      ? (isArabicText(cleanedHtml) ? 'rtl' : 'ltr') 
       : direction;
     const isRtl = computedDirection === 'rtl';
 
-    // Filter total all internal visual decorators and extra comments before saving clean text
-    const cleanHtml = stripPageBreaks(contentToSave);
-
-    // Fresh exact A4 page calculations on clean content
-    const finalPages = paginateHtml(cleanHtml, {
+    const finalPages = paginateHtml(cleanedHtml, {
       fontSize,
       lineHeight,
       isRtl
     });
 
     const trimmedPages = finalPages.map(p => p.trim());
-    onSave(trimmedPages, cleanHtml, {
+    onSave(trimmedPages, cleanedHtml, {
       textAlign,
       direction,
       fontSize,
       lineHeight
     });
-    onSuccessMessage(`Kitab berhasil disunting. Total ${trimmedPages.length} Halaman A4 standard tersimpan.`);
+    onSuccessMessage(`Kitab berhasil tersimpan! Konten dirapikan & terbagi otomatis dalam ${trimmedPages.length} Halaman A4.`);
   };
 
   if (!isOpen) return null;
@@ -684,7 +246,7 @@ export default function KitabTextEditor({
             </div>
             <div>
               <h4 className="text-xs font-extrabold tracking-tight flex items-center gap-1.5 uppercase font-sans">
-                Editor Alur Bebas MS-Word <span className="bg-amber-400 text-slate-950 text-[9px] px-1.5 py-0.5 rounded-full font-serif lowercase italic">pro a4-style</span>
+                Editor Lembar Tunggal MS-Word <span className="bg-amber-400 text-slate-950 text-[9px] px-1.5 py-0.5 rounded-full font-serif lowercase italic">pro continuous canvas</span>
               </h4>
               <p className="text-[10px] text-emerald-200/90 font-mono mt-0.5">
                 Kitab: {kitabTitle || 'Manuskrip Baru'} ({kitabJenis})
@@ -697,27 +259,17 @@ export default function KitabTextEditor({
             <button
               type="button"
               onClick={handleCleanSpaces}
-              className="flex items-center gap-1 bg-emerald-900 hover:bg-emerald-850 text-emerald-100 border border-emerald-755 px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer shadow-2xs"
-              title="Merapikan spasi berlebih dan spasi ganda secara cerdas"
+              className="flex items-center gap-1.5 bg-emerald-900 hover:bg-emerald-850 text-emerald-100 border border-emerald-700 px-3 py-1.5 rounded-xl font-bold text-[10.5px] transition-all cursor-pointer shadow-2xs"
+              title="Merapikan spasi berlebih, menghapus tabel/shapes, dan memangkas enter yang terlalu jauh"
             >
-              <Sparkles className="h-3 w-3 text-amber-300" /> Auto-Spasi & Paragraf
-            </button>
-
-            {/* ADJUST PAGE BOUNDARIES */}
-            <button
-              type="button"
-              onClick={() => handleAdjustPageBoundaries()}
-              className="flex items-center gap-1 bg-teal-900 hover:bg-teal-850 text-teal-100 border border-teal-700 px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer shadow-2xs"
-              title="Mengkalkulasi ulang tinggi konten dan mengatur posisi sekat lembar kertas A4"
-            >
-              <BookOpen className="h-3 w-3 text-amber-300 animate-pulse" /> Sesuaikan Sekat Halaman (A4)
+              <Sparkles className="h-3.5 w-3.5 text-amber-300" /> Auto-Spasi & Paragraf
             </button>
 
             <span className="text-emerald-800/60 hidden md:inline">|</span>
 
             {/* COUNTERS */}
-            <div className="flex items-center gap-1.5 bg-emerald-950/40 px-2.5 py-1 rounded-lg text-[9.5px] font-mono text-emerald-250">
-              <span className="text-emerald-300 font-bold">{editorPages.length}</span> Hal A4
+            <div className="flex items-center gap-1.5 bg-emerald-950/40 px-3 py-1 rounded-lg text-[10px] font-mono text-emerald-250 border border-emerald-800/50">
+              Estimasi: <span className="text-emerald-300 font-bold">{estimatedPagesCount} Halaman A4</span>
               <span>•</span>
               <span className="text-emerald-300 font-bold">
                 {fullContentHtml.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length}
@@ -799,7 +351,7 @@ export default function KitabTextEditor({
 
                 <span className="text-slate-700 mx-1">|</span>
 
-                {/* DIRECTION MODE (Global setting, keep editable) */}
+                {/* DIRECTION MODE */}
                 <div className="flex rounded-md bg-slate-900 p-0.5 border border-slate-700 text-[9px]">
                   <button
                     type="button"
@@ -851,15 +403,15 @@ export default function KitabTextEditor({
                 </select>
               </div>
 
-              {/* NAV PREV NEXT BADGE */}
+              {/* ESTIMATE BADGE */}
               <div className="flex items-center gap-2 font-mono text-[10px]">
-                <span className="bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-850">
-                  Estimasi Budget: <span className="text-emerald-400 font-bold">{editorPages.length} Halaman A4</span>
+                <span className="bg-slate-900 px-2.5 py-1 rounded text-slate-400 border border-slate-700">
+                  Total Budget: <span className="text-emerald-400 font-bold">~{estimatedPagesCount} Halaman A4</span>
                 </span>
               </div>
             </div>
 
-            {/* WYSIWYG SUB TOOLBAR FOR TEXT BLOCK (Selection locked) */}
+            {/* WYSIWYG SUB TOOLBAR FOR TEXT BLOCK */}
             <div className="bg-slate-850 text-slate-300 px-4 py-2 border-b border-slate-750 flex flex-wrap items-center gap-1.5 shrink-0 text-[10px]">
               <span className="text-[9px] font-bold text-slate-500 uppercase font-mono mr-1">Teks Blok (Word Style):</span>
               
@@ -1012,38 +564,6 @@ export default function KitabTextEditor({
 
                 <span className="text-slate-700 mx-1">|</span>
 
-                {/* TABLE INSERTER */}
-                <button
-                  type="button"
-                  disabled={!isSelectionActive}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    const tableHtml = `
-                      <table style="width: 100%; border-collapse: collapse; margin: 14px 0;">
-                        <thead>
-                          <tr style="background-color: #f8fafc;">
-                            <th style="border: 1.5px solid #cbd5e1; padding: 10px 14px; font-weight: bold; text-align: left;">Judul Kolom 1</th>
-                            <th style="border: 1.5px solid #cbd5e1; padding: 10px 14px; font-weight: bold; text-align: left;">Judul Kolom 2</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td style="border: 1.5px solid #cbd5e1; padding: 10px 14px;">Isi Data 1</td>
-                            <td style="border: 1.5px solid #cbd5e1; padding: 10px 14px;">Isi Data 2</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    `;
-                    handleFormat('insertHTML', tableHtml);
-                  }}
-                  className={!isSelectionActive ? `opacity-35 cursor-not-allowed pointer-events-none p-1 px-2 rounded bg-slate-900 border border-slate-700 text-slate-500 flex items-center gap-1 text-[10px]` : `p-1 px-2 rounded bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 flex items-center gap-1 font-bold cursor-pointer`}
-                  title="Sisipkan Tabel"
-                >
-                  <Table className="h-3.5 w-3.5" /> +Tabel
-                </button>
-
-                <span className="text-slate-700 mx-1">|</span>
-
                 {/* COLORS */}
                 <div className={`flex items-center gap-1 ${!isSelectionActive ? disabledToolbarBtnClass : ''}`}>
                   <button
@@ -1108,28 +628,13 @@ export default function KitabTextEditor({
               
               <style dangerouslySetInnerHTML={{ __html: `
                 .word-content table {
-                  width: 100%;
-                  border-collapse: collapse;
-                  margin-top: 14px;
-                  margin-bottom: 14px;
-                  font-size: 0.9em;
+                  display: none !important;
                 }
-                .word-content th, .word-content td {
-                  border: 1.5px solid #cbd5e1;
-                  padding: 10px 14px;
-                  text-align: inherit;
-                  vertical-align: middle;
-                }
-                .word-content th {
-                  background-color: #f8fafc;
-                  font-weight: 700;
-                  color: #1e293b;
-                }
-                .word-content tr:nth-child(even) {
-                  background-color: rgba(248, 250, 252, 0.5);
+                .word-content img, .word-content svg, .word-content canvas {
+                  display: none !important;
                 }
                 .word-content p {
-                  margin-bottom: 10px;
+                  margin-bottom: 12px;
                   text-align: inherit;
                 }
                 .word-content h1, .word-content h2, .word-content h3, .word-content h4 {
@@ -1165,86 +670,77 @@ export default function KitabTextEditor({
                   border-top: 2px solid #e2e8f0;
                   margin: 20px 0;
                 }
-                .page-break-divider {
-                  height: 48px;
-                  background-color: #f1f5f9;
-                  margin-left: -60px;
-                  margin-right: -60px;
-                  border-top: 1px solid #cbd5e1;
-                  border-bottom: 1px solid #cbd5e1;
-                  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), inset 0 -2px 4px rgba(0,0,0,0.05);
-                  position: relative;
-                  user-select: none;
-                  -webkit-user-select: none;
-                  pointer-events: none;
-                  display: block;
-                }
               `}} />
 
-              {/* Single Continuous Flowable Sheet with real visual page break divisions */}
-              <div className="relative select-text" style={{ width: '794px' }}>
-                
-                {/* Flowable Editor Container with solid white paper appearance */}
-                <div className="relative z-10 w-full" style={{ width: '794px' }}>
-                  
-                  {/* Floating Metadata Indicator */}
-                  <div className="absolute top-[20px] left-[60px] right-[60px] flex items-center justify-between border-b pb-2 border-slate-200 font-mono text-[9px] text-slate-400 select-none pointer-events-none z-25">
-                    <span className="uppercase tracking-wider font-extrabold text-emerald-800 font-sans">MANUSKRIP UTUH (A4 FLOWABLE)</span>
+              {/* UNIFIED CONTINUOUS A4 SHEET CANVAS */}
+              <div className="flex flex-col items-center py-4 w-full select-text">
+                <div 
+                  className="bg-white shadow-2xl rounded-sm border border-slate-300 relative text-slate-850 flex flex-col transition-all"
+                  style={{ 
+                    width: '794px', 
+                    minHeight: '1122px', // Minimum 1 A4 height, grows smoothly downwards
+                    paddingTop: '60px',
+                    paddingBottom: '60px',
+                    paddingLeft: '60px',
+                    paddingRight: '60px',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  {/* Top Watermark */}
+                  <div className="flex items-center justify-between border-b pb-2 mb-6 border-slate-200 font-mono text-[9px] text-slate-400 select-none pointer-events-none">
+                    <span className="uppercase tracking-wider font-extrabold text-emerald-800 font-sans">
+                      MANUSKRIP LEMBAR TUNGGAL — {kitabTitle || 'MANUSKRIP KITAB'}
+                    </span>
                     <div className="flex items-center gap-2">
-                      <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase font-sans">KERTAS A4 PATEN</span>
+                      <span className="bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full text-[8px] font-bold uppercase font-sans">
+                        LEMBAR A4 CONTINUOUS (LEBAR 794 PX)
+                      </span>
                       {isArabicText(fullContentHtml) && (
-                        <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full text-[8px] font-bold font-sans">Aksara Arab Aktif</span>
+                        <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full text-[8px] font-bold font-sans">Aksara Arab</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Flowable Editor Content Area */}
+                  {/* Single Continuous Editable Content Area */}
                   <div
                     id="continuous-editor-sheet"
                     ref={editorRef}
                     contentEditable
                     suppressContentEditableWarning
-                    onInput={() => handleReflow(false)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete') {
-                        // Let browser finish processing naturally first, then update dividers in-place after 10ms
-                        setTimeout(() => handleReflow(true), 10);
-                      }
+                    dir={computedDirection}
+                    className={`word-content outline-none focus:outline-none w-full min-h-[960px] font-medium text-slate-850 relative ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
+                    onInput={(e) => {
+                      const html = e.currentTarget.innerHTML;
+                      setFullContentHtml(html);
+                      updateEstimatedPages(html);
                     }}
                     onBlur={(e) => {
-                      setFullContentHtml(e.currentTarget.innerHTML);
-                    }}
-                    dir={computedDirection}
-                    className={`word-content outline-none focus:outline-none w-full transition-all font-medium text-slate-850 relative rounded-sm border border-slate-300 shadow-2xl ${alignClass} ${sizeClass} ${leadingClass} ${familyClass}`}
-                    style={{
-                      paddingTop: '60px',
-                      paddingBottom: '60px',
-                      paddingLeft: '60px',
-                      paddingRight: '60px',
-                      boxSizing: 'border-box',
-                      minHeight: '1122px',
-                      backgroundColor: '#ffffff'
+                      const html = e.currentTarget.innerHTML;
+                      setFullContentHtml(html);
+                      updateEstimatedPages(html);
                     }}
                   />
 
-                  {/* Floating Footer Indicator inside Page 1 background bottom area */}
-                  <div className="absolute top-[1085px] left-[60px] right-[60px] flex items-center justify-between border-t pt-2 border-slate-150 font-mono text-[8px] text-slate-400 select-none pointer-events-none z-20">
-                    <span className="font-sans">Lembar Utama Aliran Kata</span>
-                    <span className="font-sans">Simulasi Mesin Editor A4</span>
+                  {/* Bottom Watermark */}
+                  <div className="flex items-center justify-between pt-2 mt-8 font-mono text-[8px] text-slate-400 select-none pointer-events-none">
+                    <span className="font-sans text-slate-500 font-medium">Batas Cetak A4 Standard — Lembar Kerja Bebas Error</span>
+                    <span className="font-sans font-extrabold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
+                      Estimasi: {estimatedPagesCount} Halaman A4 saat dibaca
+                    </span>
                   </div>
                 </div>
-
               </div>
 
               {/* TIPS BANNER */}
-              <div className="mt-6 p-4 bg-slate-850 text-[10.5px] leading-relaxed text-slate-300 max-w-[210mm] w-full rounded-xl border border-slate-700 flex items-start gap-3 shadow-md">
+              <div className="mt-6 p-4 bg-slate-850 text-[10.5px] leading-relaxed text-slate-300 max-w-[794px] w-full rounded-xl border border-slate-700 flex items-start gap-3 shadow-md">
                 <Sparkles className="h-4 w-4 text-amber-300 flex-shrink-0 mt-0.5 animate-pulse" />
                 <div>
-                  <strong className="text-amber-300">Tips Format & Penyuntingan Pintar:</strong> 
+                  <strong className="text-amber-300">Layout Lembar Bebas Memanjang (Continuous Canvas):</strong> 
                   <ul className="list-disc pl-4 space-y-1.5 mt-1.5 text-slate-350 font-sans">
-                    <li>Halaman di atas bersikap <span className="text-emerald-300 font-bold">fleksibel & mengalir utuh (flowable)</span> layaknya Microsoft Word asli. Anda bebas menekan Enter atau menghapus spasi/kata tanpa batasan sekat antar halaman.</li>
-                    <li>Sistem cerdas di latar belakang akan <span className="text-emerald-300 font-bold">mengkalkulasikan tinggi halaman A4</span> secara dinamis dan menempatkan sekat batas lembar kerja secara otomatis tanpa memutus alur kursor atau melompat.</li>
-                    <li>Untuk memformat teks, pastikan Anda memblok/menyeleksi kata terlebih dahulu untuk mengaktifkan toolbar formatting di bagian atas.</li>
+                    <li>Semua teks berada di dalam <span className="text-emerald-300 font-bold">satu kertas memanjang yang sama</span> tanpa sekat halaman yang mengganggu.</li>
+                    <li>Operasi seperti tekan <span className="text-emerald-300 font-bold">Enter, Backspace, maupun Hapus Baris</span> dijamin berjalan 100% mulus tanpa error.</li>
+                    <li>Gunakan tombol <span className="text-amber-300 font-bold">Auto-Spasi & Paragraf</span> untuk membuang spasi berlebih, menghapus tabel/shapes, serta merapikan enter yang terlalu jauh.</li>
+                    <li>Saat kitab disimpan atau dibaca pada Pembaca Kitab (Reader), sistem akan otomatis memotong teks menjadi halaman A4 yang rapi tanpa ada kalimat terpotong.</li>
                   </ul>
                 </div>
               </div>
